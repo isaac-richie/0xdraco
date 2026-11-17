@@ -3,9 +3,9 @@
    between stations, per-section choreography, UI, sound.
    ========================================================================== */
 import * as THREE from 'three';
-import { buildWorld, ST, shurikenMesh } from './world.js?v=6';
-import { createPipeline, loadHDRI, createAtmosphere, blendLook } from './cinema.js?v=6';
-import { loadCast, Character, manager } from './characters.js?v=6';
+import { buildWorld, ST, shurikenMesh } from './world.js?v=7';
+import { createPipeline, loadHDRI, createAtmosphere, blendLook } from './cinema.js?v=7';
+import { loadCast, Character, manager } from './characters.js?v=7';
 
 gsap.registerPlugin(ScrollTrigger);
 const $ = (s, r = document) => r.querySelector(s), $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -29,7 +29,8 @@ renderer.shadowMap.enabled = !mobile;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(mobile ? 60 : 44, innerWidth / innerHeight, .1, 2200);
+// near/far kept tight for depth precision (a wide range makes distant surfaces shimmer)
+const camera = new THREE.PerspectiveCamera(mobile ? 60 : 44, innerWidth / innerHeight, .35, 1700);
 camera.position.set(-5, 8, 9);
 
 const hemi = new THREE.HemisphereLight('#6a5690', '#1c0d10', 1.0); scene.add(hemi);
@@ -206,6 +207,14 @@ const INTRO = [
 const mouse = { x: 0, y: 0 };
 addEventListener('pointermove', e => { mouse.x = e.clientX / innerWidth - .5; mouse.y = e.clientY / innerHeight - .5; });
 
+const SUN_OFF = V(10, 40, -60), sunDir = SUN_OFF.clone().normalize();
+const sunRight = V(0, 1, 0).cross(sunDir).normalize(), sunUp = sunDir.clone().cross(sunRight).normalize();
+const TEXEL = 52 / 2048, snapped = V(0, 0, 0);
+function snapToTexel(p) {
+  const r = Math.round(p.dot(sunRight) / TEXEL) * TEXEL, u = Math.round(p.dot(sunUp) / TEXEL) * TEXEL, d = p.dot(sunDir);
+  return snapped.copy(sunRight).multiplyScalar(r).addScaledVector(sunUp, u).addScaledVector(sunDir, d);
+}
+
 function frameCamera(dt) {
   const y = scrollY;
   ranges.forEach(r => { prog[r.id] = range(y, r.start, r.end); });
@@ -239,8 +248,9 @@ function frameCamera(dt) {
   camera.lookAt(camLook);
 
   // keep the sun light + shadow camera on whatever we are looking at
-  const f = camLook;
-  sunL.target.position.copy(f); sunL.position.copy(f).add(V(10, 40, -60));
+  // snap the shadow camera to whole shadow-map texels so shadows don't crawl/shimmer as the camera drifts
+  const f = snapToTexel(camLook);
+  sunL.target.position.copy(f); sunL.position.copy(f).add(SUN_OFF);
   fill.target.position.copy(f); fill.position.copy(f).add(V(-20, 10, 30));
 }
 

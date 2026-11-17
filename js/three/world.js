@@ -104,7 +104,7 @@ export function pagoda(parent, x, z, tiers = 5, s = 1) {
   for (let i = 0; i < tiers; i++) {
     const w = 9 - i * 1.3, h = 3.2 - i * .15;
     box(g, w * .62, h, w * .62, M.wall(), 0, y + h / 2, 0);
-    box(g, .7, .55, .06, M.window(), 0, y + h * .55, w * .31 + .04);
+    box(g, .7, .55, .06, M.window(), 0, y + h * .55, w * .31 + .1);
     hipRoof(g, w * 1.15, w * 1.15, 1.3, y + h);
     y += h + .9;
   }
@@ -119,7 +119,7 @@ function castleKeep(parent, x, z, s = 1) {
   let y = 8;
   [[16, 6], [13, 5], [10, 4.4], [7, 4]].forEach(([w, h], i) => {
     box(g, w, h, w * .8, M.plaster(), 0, y + h / 2, 0);
-    for (let k = -1; k <= 1; k++) box(g, .9, .8, .06, M.window(), k * w * .28, y + h * .55, w * .4 + .04);
+    for (let k = -1; k <= 1; k++) box(g, .9, .8, .06, M.window(), k * w * .28, y + h * .55, w * .4 + .1);
     hipRoof(g, w * 1.25, w * 1.05, 2, y + h);
     y += h + 1.2;
   });
@@ -130,8 +130,8 @@ function castleKeep(parent, x, z, s = 1) {
 export function house(parent, x, z, w, d, h, ry = 0) {
   const g = group(parent, x, 0, z, ry);
   box(g, w, h, d, M.wall(), 0, h / 2, 0);
-  box(g, w * .98, h * .32, d * 1.01, M.plaster(), 0, h * .74, 0);
-  if (rnd() < .75) box(g, w * .25, h * .28, .06, M.window(), R(-w * .25, w * .25), h * .36, d / 2 + .04);
+  box(g, w * .98, h * .32, d + .18, M.plaster(), 0, h * .74, 0);
+  if (rnd() < .75) box(g, w * .25, h * .28, .06, M.window(), R(-w * .25, w * .25), h * .36, d / 2 + .08);
   const top = gableRoof(g, w, d, Math.min(w, d) * .36, h);
   return { g, top };
 }
@@ -351,7 +351,8 @@ export function buildWorld(scene, { mobile = false } = {}) {
   }
   const fuji = new THREE.Mesh(new THREE.ConeGeometry(300, 260, 24, 1, true), new THREE.MeshBasicMaterial({ color: '#341a2e', fog: false }));
   fuji.position.set(160, 95, -820); world.add(fuji);
-  const cap = new THREE.Mesh(new THREE.ConeGeometry(78, 68, 24), new THREE.MeshBasicMaterial({ color: '#c9a5a8', fog: false }));
+  // snowcap sits a few metres proud of the slope (a coincident surface flickers)
+  const cap = new THREE.Mesh(new THREE.ConeGeometry(85, 73, 24), new THREE.MeshBasicMaterial({ color: '#c9a5a8', fog: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 }));
   cap.position.set(160, 191, -820); world.add(cap);
 
   const anchors = {};
@@ -387,7 +388,7 @@ export function buildWorld(scene, { mobile = false } = {}) {
     [[-80, -6], [6, 80]].forEach(([a, b]) => {
       const seg = group(g, (a + b) / 2, 0, WZ);
       box(seg, b - a, WH, 2.4, M.wall(), 0, WH / 2, 0);
-      box(seg, b - a, 1.2, 2.5, M.plaster(), 0, WH - .9, 0);
+      box(seg, b - a, 1.2, 2.75, M.plaster(), 0, WH - .9, 0);
       gableRoof(seg, b - a, 2.6, 1.3, WH);
       for (let x = a + 6; x < b - 3; x += 12) box(seg, .7, .5, .05, M.window(), x - (a + b) / 2, WH * .5, 1.24);
     });
@@ -407,7 +408,7 @@ export function buildWorld(scene, { mobile = false } = {}) {
     box(g, 12, .02, 9, mat('tatami', '#9c8a55'), 0, .51, -1);
     for (const [x, z] of [[-8, -7], [8, -7], [-8, 7], [8, 7], [0, -7], [-8, 0], [8, 0], [-4, 7], [4, 7]]) cyl(g, .26, .28, 5, 8, M.woodDark(), x, 2.75, z);
     hipRoof(g, 20, 18, 3.6, 5.2);
-    box(g, 17.4, .3, 15.4, M.woodDark(), 0, 5.2, 0);
+    box(g, 17.4, .2, 15.4, M.woodDark(), 0, 5.12, 0);
 
     const paper = new THREE.MeshStandardMaterial({ color: '#f3ddb1', emissive: new THREE.Color('#ffb35a'), emissiveIntensity: .75, transparent: true, opacity: .86, side: THREE.DoubleSide, depthWrite: false });
     const wall = (w, x, z, ry) => {
@@ -488,7 +489,7 @@ export function buildWorld(scene, { mobile = false } = {}) {
     const Rd = ST.road, g = group(world, Rd.x, 0, Rd.z);
     const N = mobile ? 22 : 30, step = 2.4;
     for (let i = 0; i < N; i++) torii(g, 0, -i * step, .62);
-    box(g, 2.6, .06, N * step + 10, mat('path', '#4a3f3a'), 0, .03, -N * step / 2 + 4);
+    box(g, 2.6, .1, N * step + 10, mat('path', '#4a3f3a'), 0, .07, -N * step / 2 + 4);
     for (let i = 0; i < N; i += 3) { stoneLantern(g, -2.6, -i * step - 1.2, .8); stoneLantern(g, 2.6, -i * step - 1.2, .8); }
     for (let i = 0; i < 14; i++) sakura(g, (i % 2 ? 1 : -1) * R(6, 11), 0, -i * 5 + R(-2, 2), R(.8, 1.2));
     grassField(g, 0, -N * step / 2, 26, N * step + 20, mobile ? 700 : 1600, '#1b1110', .2, .7);
