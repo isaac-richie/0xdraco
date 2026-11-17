@@ -1,4 +1,4 @@
-# 侍 Isaac Richie — The Way of the Builder
+# 侍 Isaac Richard — The Way of the Builder
 
 A 3D portfolio set in shogun-era Japan. As you scroll, the camera flies through a single world at dusk, with a samurai and a ninja performing real motion-captured animations.
 

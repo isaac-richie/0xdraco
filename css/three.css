@@ -23,8 +23,10 @@ body.three { background: #0b0610; color: var(--paper); }
 
 /* hero */
 .three .hero { height: 130vh; min-height: 0; background: none; overflow: visible; }
-.three .hero-content { position: sticky; top: 0; left: auto; right: auto; height: 100vh; display: flex; flex-direction: column; justify-content: center; transform: none; left: auto; max-width: 660px; }
+.three .hero-content { position: sticky; top: 0; left: auto; right: auto; height: 100vh; display: flex; flex-direction: column; justify-content: center; transform: none; left: auto; max-width: 720px; }
 .three .hero-title { text-shadow: 0 6px 40px rgba(0, 0, 0, .55); }
+/* "RICHARD" is ~5.1em wide: size the name so the longest line always fits beside the scene */
+.three .hero-title { font-size: clamp(56px, 9.4vw, 138px); }
 .three .scroll-cue { position: absolute; bottom: 32vh; }
 
 /* about */
@@ -91,6 +93,7 @@ body.three { background: #0b0610; color: var(--paper); }
 
 @media (max-width: 760px) {
   .three .hero-content { justify-content: flex-start; padding-top: 110px; }
+  .three .hero-title { font-size: min(68px, calc((100vw - 2 * var(--gutter)) / 5.3)); }
   .glass.sticky { top: auto; position: relative; margin-top: 40vh; }
   .about { height: auto; padding-bottom: 60vh; }
   .three .skills { margin-top: 40vh; }
