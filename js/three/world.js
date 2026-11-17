@@ -57,7 +57,7 @@ const M = {
   black: () => mat('black', '#120c0c', { roughness: .5 }),
   gold: () => mat('gold', '#c9a14a', { metalness: .8, roughness: .3 }),
   window: () => glow('window', '#ff9c4a', 2.2),
-  lamp: () => glow('lamp', '#ffb063', 3.6)
+  lamp: () => glow('lamp', '#ffa95a', 2.6)
 };
 
 // scale a geometry's UVs to real-world metres so textures tile at a constant size
@@ -316,7 +316,7 @@ function grassField(parent, cx, cz, w, d, n, color = '#2a1a14', hMin = .35, hMax
     o.position.set(cx + R(-w / 2, w / 2), 0, cz + R(-d / 2, d / 2));
     o.rotation.set(R(-.18, .18), R(0, Math.PI * 2), R(-.12, .12));
     // a trampled clearing (e.g. the duel circle) keeps only short stubble
-    const inHole = hole && Math.hypot(o.position.x - hole.x, o.position.z - hole.z) < hole.r;
+    const inHole = hole && (hole.strip ? Math.abs(o.position.x - hole.x) < hole.strip : Math.hypot(o.position.x - hole.x, o.position.z - hole.z) < hole.r);
     o.scale.set(R(.7, 1.3), R(hMin, hMax) * (inHole ? .22 : 1), 1);
     o.updateMatrix(); im.setMatrixAt(i, o.matrix);
     tint.setHSL(R(-.02, .04), R(.0, .25), R(.38, .6)); im.setColorAt(i, tint.multiplyScalar(1.9));
@@ -520,7 +520,8 @@ export function buildWorld(scene, { mobile = false } = {}) {
     for (let i = 0; i < cp.count; i++) if (cp.getY(i) < 5.9) { cp.setX(i, cp.getX(i) * R(.85, 1.15)); cp.setZ(i, cp.getZ(i) * R(.85, 1.15)); }
     cg.computeVertexNormals();
     add(g, new THREE.Mesh(cg, M.rock()), 0, 0, 0);
-    grassField(g, 0, 0, 10, 10, mobile ? 260 : 520, '#1a0e10', .12, .38).position.y = 6;
+    // tall golden susuki (pampas) grass bending in the wind along the clifftop
+    grassField(g, 0, 0, 12, 12, mobile ? 520 : 1100, '#3a2614', .38, 1.05, { x: 0, z: 0, r: 1.4 }).position.y = 6;
     sakura(g, -22, 0, -16, 1.4); sakura(g, 18, 0, -20, 1.2);
 
     const WZ = -45, WH = 6;
@@ -531,7 +532,7 @@ export function buildWorld(scene, { mobile = false } = {}) {
       gableRoof(seg, b - a, 2.6, 1.3, WH);
       for (let x = a + 6; x < b - 3; x += 12) box(seg, .7, .5, .05, M.window(), x - (a + b) / 2, WH * .5, 1.24);
     });
-    rocks(g, [[3.5, -2.5, .9, .2, 6], [-3.8, 1.5, .7, 2, 6], [-1, -4.5, .6, 4, 6]]);
+    rocks(g, [[4.2, -3.4, .8, .2, 6], [-1.5, -5.2, .55, 4, 6]]);          // nothing between the lens and her
     anchors.hero = { samurai: new THREE.Vector3(H.x, 6, H.z), wall: { z: H.z + WZ, y: WH + 1.45, gap: [-6, 6], from: -80, to: 80 } };
 
     castleKeep(g, -38, -110, 1.2);
@@ -643,10 +644,10 @@ export function buildWorld(scene, { mobile = false } = {}) {
     const Rd = ST.road, g = group(world, Rd.x, 0, Rd.z);
     const N = mobile ? 22 : 30, step = 2.4;
     for (let i = 0; i < N; i++) torii(g, 0, -i * step, .62);
-    box(g, 2.6, .1, N * step + 10, mat('path', '#4a3f3a'), 0, .07, -N * step / 2 + 4);
+    box(g, 2.6, .1, N * step + 10, M.stone(), 0, .07, -N * step / 2 + 4);          // worn stone slab path
     for (let i = 0; i < N; i += 3) { stoneLantern(g, -2.6, -i * step - 1.2, .8); stoneLantern(g, 2.6, -i * step - 1.2, .8); }
     for (let i = 0; i < 14; i++) sakura(g, (i % 2 ? 1 : -1) * R(6, 11), 0, -i * 5 + R(-2, 2), R(.8, 1.2));
-    grassField(g, 0, -N * step / 2, 26, N * step + 20, mobile ? 700 : 1600, '#1b1110', .2, .7);
+    grassField(g, 0, -N * step / 2, 26, N * step + 20, mobile ? 700 : 1600, '#1b1110', .2, .7, { x: 0, strip: 1.45 });
     anchors.road = { x: Rd.x, z0: Rd.z + 3, z1: Rd.z - N * step + 2 };
   }
 

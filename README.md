@@ -7,12 +7,12 @@ It's a static site with no build step: [Three.js](https://threejs.org), GSAP wit
 ## The journey
 | Section | Scene |
 |---|---|
-| 序 Hero | The samurai draws her katana on a cliff above a castle town while ninjas sprint and flip along the castle wall |
+| 序 Hero | The samurai draws her katana in a field of wind-blown pampas grass on a cliff above a castle town, while ninjas sprint and flip along the castle wall |
 | 道 The Way | A lantern-lit dojo: she rises from meditation, draws her katana and runs two-handed sword drills while a ninja sneaks past outside the shōji |
 | 武 Arsenal | In a bamboo grove, a ninja drills roundhouse, flip and hurricane kicks, and throws a 3D shuriken at the straw targets as each skill card scrolls in |
 | 戦 Campaigns | Project cards slide sideways while the ninja runs and flips across the rooftops at your scroll speed |
-| 旅 The Road | The samurai walks through a tunnel of vermilion torii gates, lighting up each milestone |
-| 決 The Duel | A motion-captured sword fight, driven by your scroll, with slow motion around each strike and the final cut |
+| 旅 The Road | Her katana sheathed, the samurai walks a worn stone path through a tunnel of vermilion torii gates as sakura petals drift past, lighting up each milestone |
+| 決 The Duel | A standoff over her shoulder under the cherry blossom, then a motion-captured sword fight driven by your scroll, with slow motion around each strike and the final cut |
 
 **Sound:** visitors opt in on the loading screen. Each part of the page has its own recorded epic Japanese track, and the tracks crossfade as you scroll between sections:
 
@@ -47,7 +47,7 @@ Then open http://localhost:5173.
 - **Lighting:** the "The Sky Is On Fire" sunset HDRI provides image-based light for every character and surface.
 - **Post-processing:** depth of field with automatic focus pulls, bloom, ACES tone mapping, and a custom grading shader (contrast, saturation, vignette, film grain, lens fringing, screen-space sun rays).
 - **Per-scene grades:** the colour blends as the camera flies between scenes, from sunset to dojo candlelight, golden bamboo, blue-hour rooftops, lantern dusk and a blood-red duel.
-- **Atmosphere:** drifting mist, embers, fireflies, light shafts, and rain with a lightning strike on the final cut.
+- **Atmosphere:** drifting mist, embers, fireflies, wind-blown sakura petals, light shafts, and rain with a lightning strike on the final cut.
 - **Direction:** an opening crane shot, chapter title cards between scenes, bows before the duel, and a ninja roll when he lands on the rooftops.
 
 ## Credits

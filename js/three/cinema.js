@@ -178,6 +178,19 @@ export function createAtmosphere(scene, { mobile }) {
   const embers = sparkField(mobile ? 120 : 260, '#ff8a3a', .12);
   const flies = sparkField(mobile ? 50 : 110, '#c8ff8a', .16);
 
+  // sakura petals: pale flakes riding the wind across the frame, fluttering as they fall
+  const pc = document.createElement('canvas'); pc.width = pc.height = 64;
+  const px = pc.getContext('2d'), pg = px.createRadialGradient(28, 30, 2, 32, 32, 26);
+  pg.addColorStop(0, 'rgba(255,240,244,1)'); pg.addColorStop(.6, 'rgba(255,190,210,.95)'); pg.addColorStop(1, 'rgba(255,170,200,0)');
+  px.fillStyle = pg; px.beginPath(); px.ellipse(32, 32, 26, 15, -.5, 0, Math.PI * 2); px.fill();
+  px.globalCompositeOperation = 'destination-out'; px.beginPath(); px.arc(56, 18, 8, 0, Math.PI * 2); px.fill();   // the notch
+  const petalTex = new THREE.CanvasTexture(pc); petalTex.colorSpace = THREE.SRGBColorSpace;
+  const PN = mobile ? 140 : 320, ppos = new Float32Array(PN * 3), pseed = new Float32Array(PN);
+  for (let i = 0; i < PN; i++) { ppos.set([(Math.random() - .5) * 20, Math.random() * 9 - 1, (Math.random() - .5) * 16], i * 3); pseed[i] = Math.random() * 100; }
+  const pgeo = new THREE.BufferGeometry(); pgeo.setAttribute('position', new THREE.BufferAttribute(ppos, 3));
+  const petals = new THREE.Points(pgeo, new THREE.PointsMaterial({ map: petalTex, color: '#f7b3c6', size: .2, transparent: true, depthWrite: false, opacity: 0, fog: true }));
+  petals.frustumCulled = false; group.add(petals);
+
   // rain: streaks that fall around the camera (duel)
   const RN = mobile ? 700 : 1800;
   const rgeo = new THREE.BufferGeometry(), rpos = new Float32Array(RN * 6), rvel = new Float32Array(RN);
@@ -235,6 +248,23 @@ export function createAtmosphere(scene, { mobile }) {
         }
         rgeo.attributes.position.needsUpdate = true;
         rain.position.set(cam.position.x, cam.position.y - 8, cam.position.z - 6);
+      }
+      // petals: gusting wind, a slow fall and a flutter; wrap round a box that follows the camera
+      const pa = weather.petals || 0;
+      petals.visible = pa > .01; petals.material.opacity = Math.min(1, pa * 1.1);
+      if (petals.visible) {
+        const gust = 1.6 + Math.sin(t * .35) * .9 + Math.sin(t * 1.1) * .35;
+        for (let i = 0; i < PN; i++) {
+          const s = pseed[i], j = i * 3;
+          let x = ppos[j] + dt * gust * (.7 + (s % 1) * .6);
+          let y = ppos[j + 1] - dt * (.32 + (s % .5)) + Math.sin(t * 2.3 + s) * dt * .45;
+          const z = ppos[j + 2] + Math.sin(t * .9 + s * 2) * dt * .5;
+          if (x > 10) x -= 20; if (y < -1) y += 9;
+          ppos[j] = x; ppos[j + 1] = y; ppos[j + 2] = z;
+        }
+        pgeo.attributes.position.needsUpdate = true;
+        petals.position.set(cam.position.x, cam.position.y - 3, cam.position.z - 5);
+        petals.material.color.set('#f7b3c6').lerp(look.fog, .15);
       }
       shaftMat.opacity = weather.shafts * (.07 + .015 * Math.sin(t * 1.3));
       shafts.visible = weather.shafts > .01;

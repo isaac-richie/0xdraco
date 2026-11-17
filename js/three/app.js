@@ -3,8 +3,8 @@
    between stations, per-section choreography, UI, sound.
    ========================================================================== */
 import * as THREE from 'three';
-import { buildWorld, ST, shurikenMesh } from './world.js?v=11';
-import { createPipeline, loadHDRI, createAtmosphere, blendLook } from './cinema.js?v=9';
+import { buildWorld, ST, shurikenMesh } from './world.js?v=13';
+import { createPipeline, loadHDRI, createAtmosphere, blendLook } from './cinema.js?v=12';
 import { loadCast, Character, manager } from './characters.js?v=9';
 
 gsap.registerPlugin(ScrollTrigger);
@@ -90,7 +90,7 @@ const roofNin = mk('ninja', 'work');
 roofNin.play('crouch');
 
 const roadSam = mk('samurai', 'journey');
-roadSam.setArmed(true); roadSam.root.position.set(A.road.x, 0, A.road.z0); roadSam.root.rotation.y = Math.PI; roadSam.play('idle');
+roadSam.setArmed(false); roadSam.root.position.set(A.road.x, 0, A.road.z0); roadSam.root.rotation.y = Math.PI; roadSam.play('idle');
 
 const duelSam = mk('samurai', 'duel'), duelNin = mk('ninja', 'duel');
 duelSam.root.rotation.y = Math.PI / 2; duelNin.root.rotation.y = -Math.PI / 2;
@@ -219,10 +219,21 @@ const CAM = {
     const ang = lerp(-.34, .26, range(k, .08, .8));
     // wide establishing shot for the bows, then in close for the fight
     const dist = (narrow ? 8.6 : 6.4) + (1 - range(k, .16, .3)) * (narrow ? 5 : 3) - range(k, .22, .36) * 1.3 - bi * 1.9 + end * 3;
-    return {
+    const orbit = {
       p: V(mid.x + Math.sin(ang) * dist, 1.35 - bi * .2 + end * 1.4 + (1 - range(k, .2, .3)) * .4, mid.z + Math.cos(ang) * dist),
       l: V(mid.x, 1.2 + end * .9, mid.z - 1)
     };
+    // the standoff: low over the samurai's shoulder, the ninja waiting down the field; then swing into the orbit
+    const w = smooth(range(k, .17, .3));
+    if (w >= 1) return orbit;
+    const s = duelSam.root.position, n = duelNin.root.position;
+    // three-quarter from behind her, on the near side, so the torii, sakura and sunset sit behind the ninja
+    const dir = V(n.x - s.x, 0, n.z - s.z).normalize(), near = V(0, 0, 1);
+    const ots = {
+      p: V(s.x, 0, s.z).addScaledVector(dir, -(narrow ? 3.4 : 1.7) - k * 2).addScaledVector(near, narrow ? .5 : 2.9).setY(1.55),
+      l: V(n.x, 1.25, n.z).addScaledVector(near, narrow ? 0 : -2.2)
+    };
+    return { p: ots.p.lerp(orbit.p, w), l: ots.l.lerp(orbit.l, w) };
   }
 };
 const camPos = camera.position.clone(), camLook = V(0, 7, -20), tmpP = V(0, 0, 0), tmpL = V(0, 0, 0);
@@ -528,12 +539,12 @@ let lastMood = null;
 
 /* ---------- look + weather + focus per scene ---------- */
 const WEATHER = {
-  hero:    { mist: .45, embers: .75, flies: 0,  rain: 0, shafts: 0 },
-  about:   { mist: .2,  embers: .15, flies: .8, rain: 0, shafts: .9 },
-  arsenal: { mist: .32, embers: 0,   flies: .7, rain: 0, shafts: 1 },
-  work:    { mist: .3,  embers: .5,  flies: 0,  rain: 0, shafts: 0 },
-  journey: { mist: .5,  embers: .25, flies: .7, rain: 0, shafts: 0 },
-  duel:    { mist: .4,  embers: .9,  flies: 0,  rain: 0, shafts: 0 }
+  hero:    { mist: .45, embers: .55, flies: 0,  rain: 0, shafts: 0,  petals: .9 },
+  about:   { mist: .2,  embers: .15, flies: .8, rain: 0, shafts: .9, petals: 0 },
+  arsenal: { mist: .32, embers: 0,   flies: .7, rain: 0, shafts: 1,  petals: 0 },
+  work:    { mist: .3,  embers: .5,  flies: 0,  rain: 0, shafts: 0,  petals: 0 },
+  journey: { mist: .5,  embers: .2,  flies: .6, rain: 0, shafts: 0,  petals: 1 },
+  duel:    { mist: .26, embers: .9,  flies: 0,  rain: 0, shafts: 0,  petals: .55 }
 };
 const FOCUS = {          // what the lens holds sharp, and how shallow the focus is
   hero: () => [heroSam.root.position, 1.4, 7, 2.2],
