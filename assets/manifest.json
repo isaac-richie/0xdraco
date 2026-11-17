@@ -1,6 +1,6 @@
 {
   "samurai": {
-    "model": "assets/models/samurai.glb",
+    "model": "assets/models/samurai.glb?v=2",
     "scale": 0.01,
     "clips": "embedded",
     "keepRoot": [
@@ -19,7 +19,7 @@
     }
   },
   "ninja": {
-    "model": "assets/models/ninja.glb",
+    "model": "assets/models/ninja.glb?v=2",
     "scale": 0.01,
     "clips": "embedded",
     "keepRoot": [

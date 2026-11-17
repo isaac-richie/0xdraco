@@ -3,9 +3,9 @@
    between stations, per-section choreography, UI, sound.
    ========================================================================== */
 import * as THREE from 'three';
-import { buildWorld, ST, shurikenMesh } from './world.js?v=8';
-import { createPipeline, loadHDRI, createAtmosphere, blendLook } from './cinema.js?v=8';
-import { loadCast, Character, manager } from './characters.js?v=8';
+import { buildWorld, ST, shurikenMesh } from './world.js?v=11';
+import { createPipeline, loadHDRI, createAtmosphere, blendLook } from './cinema.js?v=9';
+import { loadCast, Character, manager } from './characters.js?v=9';
 
 gsap.registerPlugin(ScrollTrigger);
 const $ = (s, r = document) => r.querySelector(s), $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -79,12 +79,12 @@ const heroN = [mk('ninja', 'hero'), mk('ninja', 'hero')];
 heroN[1].root.scale.setScalar(.93);
 
 const dojoSam = mk('samurai', 'about');
-dojoSam.root.position.copy(A.dojo.samurai); dojoSam.setArmed(false); dojoSam.play('meditate');
+dojoSam.root.position.copy(A.dojo.samurai); dojoSam.root.rotation.y = .35; dojoSam.setArmed(false); dojoSam.play('meditate');
 const dojoNin = mk('ninja', 'about');
 dojoNin.root.position.set(A.dojo.sneak.from, 0, A.dojo.sneak.z); dojoNin.play('crouch');
 
 const trainNin = mk('ninja', 'arsenal');
-trainNin.root.position.copy(A.train.ninja); trainNin.root.rotation.y = Math.PI / 2; trainNin.play('crouch');
+trainNin.root.position.copy(A.train.ninja); trainNin.root.rotation.y = Math.PI / 2; trainNin.play('idle');
 
 const roofNin = mk('ninja', 'work');
 roofNin.play('crouch');
@@ -97,6 +97,34 @@ duelSam.root.rotation.y = Math.PI / 2; duelNin.root.rotation.y = -Math.PI / 2;
 duelSam.play('idle'); duelNin.play('crouch');
 
 const cfg = (c, k, d) => (cast[c.kind]?.def?.timing?.[k] ?? d);
+
+// a fighter running drills: holds a ready stance, then performs a random technique and settles back
+function drills(c, stance, moves, { rest = [1.4, 2.6], onMove } = {}) {
+  let move = null, wait = rest[0], last = null;
+  const nextWait = () => rest[0] + Math.random() * (rest[1] - rest[0]);
+  return {
+    cancel() { move = null; wait = nextWait(); },
+    update(dt) {
+      if (move) {
+        move.t += dt;
+        const a = c.current, fr = a && c.state === move.name ? a.time / a.getClip().duration : 1;
+        if (fr >= .96 || move.t > move.max) { move = null; wait = nextWait(); c.play(stance, { fade: .45 }); }
+        return;
+      }
+      if (c.state !== stance) c.play(stance, { fade: .45 });
+      if ((wait -= dt) > 0) return;
+      const pool = moves.filter(m => c.has(m) && m !== last);
+      if (!pool.length) { wait = nextWait(); return; }
+      const name = last = pool[Math.floor(Math.random() * pool.length)];
+      const a = c.play(name, { loop: false, fade: .3, restart: true });
+      move = { name, t: 0, max: a ? a.getClip().duration + .4 : 2 };
+      onMove && onMove(name);
+    }
+  };
+}
+const ninDrill = drills(trainNin, 'idle', ['kick', 'flipkick', 'hurricane'], { rest: [1.2, 2.4], onMove: () => setTimeout(() => sfx.whoosh(.16), 380) });
+const samDrill = drills(dojoSam, 'ready', ['combo', 'power'], { rest: [1.3, 2.4], onMove: n => [.42, n === 'combo' ? 1.3 : null, n === 'combo' ? 2.2 : null].forEach(t => t && setTimeout(() => sfx.slash(.16), t * 1000)) });
+let samPhase = 'sit';
 
 /* ---------- fx: sparks + flying shuriken ---------- */
 const SPARKS = 220;
@@ -165,20 +193,21 @@ const CAM = {
     const H = ST.hero, w = clamp((camera.aspect - .6) / 1.2, 0, 1);
     return { p: V(H.x - .7 - w * 2.7 + k * 2, 7.6 + (1 - w) * .5 + k * 4, H.z + 4.4 + (1 - w) * 1.8 - k * 2), l: V(H.x - .1 - w * 1.1 + k, 7.5 - (1 - w) * 1.1 + k * 1.5, H.z - 22) };
   },
-  // low, close dolly on the kneeling samurai; she sits in the left third beside the text
+  // slow dolly in on the samurai at her kata; she stands in the left third beside the text
   about: k => {
     const D = A.dojo.samurai, n = camera.aspect < 1 ? 2.5 : 0;
-    return { p: V(D.x + 2.3 - k * .9, 1.25 + n * .2, D.z + 6.6 + n - k * 2.4), l: V(D.x + 1.25 - n * .5, .95, D.z - 2) };
+    return { p: V(D.x + 2.1 - k * .8, 1.5 + n * .25, D.z + 6.4 + n - k * 1.9), l: V(D.x + 1.3 - n * .5, 1.3, D.z - 2) };
   },
+  // low three-quarter shot: the ninja in the left third, his straw targets receding behind the cards
   arsenal: k => {
-    const T = ST.train;
-    if (camera.aspect < 1) return { p: V(T.x - 7.6 - k * .6, 2.3, T.z + 8.6 - k), l: V(T.x - 8.3, 1.7, T.z - .5) };   // phones: centre the ninja
-    return { p: V(T.x - 5 - k * 1.2, 2.35, T.z + 8.4 - k * 1.2), l: V(T.x - 5.4, 1.65, T.z - .5) };
+    const N = A.train.ninja;
+    if (camera.aspect < 1) return { p: V(N.x - 1.5 - k * .5, 1.45, N.z + 6.6 - k * .6), l: V(N.x + .7, 1.15, N.z - .6) };   // phones: centre the ninja
+    return { p: V(N.x - 2.4 - k * .9, 1.3, N.z + 5.4 - k * .7), l: V(N.x + 3.1, 1.2, N.z - 1) };
   },
-  // tracking shot alongside the run, leading slightly in the running direction
+  // tracking shot alongside the run: low and closer, so he runs along the bottom of the frame under the cards
   work: () => {
     const p = roofNin.root.position, lead = roofNin.root.rotation.y > 0 ? 1.4 : -1.4, n = camera.aspect < 1 ? 3 : 0;
-    return { p: V(p.x + lead * .6, p.y + 1.1, ST.roofs.z + 7.6 + n), l: V(p.x + lead, p.y + 1.6 + n * .3, ST.roofs.z) };
+    return { p: V(p.x + lead * .5, p.y + .85 + n * .3, ST.roofs.z + 6 + n), l: V(p.x + lead * 1.1, p.y + 2.25 + n * .1, ST.roofs.z) };
   },
   // over-the-shoulder through the torii tunnel
   // inside the tunnel (the torii pillars stand at ±1.24 m), just behind her shoulder
@@ -295,10 +324,22 @@ const stations = {
     const near = Math.abs(x - A.dojo.samurai.x) < 2.5;
     if (near && !dojoNin._near) sfx.pluck();
     dojoNin._near = near;
+
+    // she meditates as you arrive, then rises, draws and runs her kata
+    if (k < .12) {
+      if (samPhase !== 'sit') { samPhase = 'sit'; samDrill.cancel(); dojoSam.setArmed(false); dojoSam.play('meditate', { fade: .9 }); }
+    } else if (samPhase === 'sit') {
+      samPhase = 'draw'; dojoSam.play('draw', { loop: false, fade: .8, restart: true });
+    } else if (samPhase === 'draw') {
+      const a = dojoSam.current, fr = a && dojoSam.state === 'draw' ? a.time / a.getClip().duration : 1;
+      if (!dojoSam.armed && fr > cfg(dojoSam, 'drawAt', .42)) { dojoSam.setArmed(true); sfx.unsheathe(.3); dojoSam.glint(); }
+      if (fr >= .97) { dojoSam.setArmed(true); samPhase = 'kata'; dojoSam.play('ready', { fade: .5 }); }
+    } else samDrill.update(dt);
   },
 
   arsenal(dt) {
-    if (!throwing && throwQ.length) { throwing = { ...throwQ.shift(), t: 0, fired: false }; trainNin.play('throw', { loop: false, fade: .12, restart: true, speed: 1.25 }); }
+    if (!throwing && throwQ.length) { ninDrill.cancel(); throwing = { ...throwQ.shift(), t: 0, fired: false }; trainNin.play('throw', { loop: false, fade: .15, restart: true, speed: 1.25 }); }
+    if (!throwing) { ninDrill.update(dt); return; }
     if (throwing) {
       throwing.t += dt;
       const a = trainNin.current, d = a ? a.getClip().duration / 1.25 : .8;
@@ -307,7 +348,7 @@ const stations = {
         throwing.fired = true; sfx.whoosh(.3);
         launchStar(trainNin.handWorld(), A.train.targets[throwing.i % A.train.targets.length], throwing.card);
       }
-      if (fr >= .96 || throwing.t > d + .3) { throwing = null; trainNin.play('crouch', { fade: .35 }); }
+      if (fr >= .96 || throwing.t > d + .3) { throwing = null; trainNin.play('idle', { fade: .4 }); }
     }
   },
 
@@ -478,22 +519,25 @@ function frame(time, deltaMs) {
     if (lastFocus && introK >= 1) chapter(focus);
     lastFocus = focus;
     links.forEach(l => l.classList.toggle('active', l.getAttribute('href') === '#' + focus));
-    window.Sound && Sound.setMood(MOOD[focus]);
   }
+  // the duel scores itself: heartbeat tension → battle drums → aftermath
+  const mood = focus !== 'duel' ? MOOD[focus] : prog.duel < .27 ? 'duel' : prog.duel < .84 ? 'battle' : 'after';
+  if (mood !== lastMood) { lastMood = mood; window.Sound && Sound.setMood(mood); }
 }
+let lastMood = null;
 
 /* ---------- look + weather + focus per scene ---------- */
 const WEATHER = {
   hero:    { mist: .45, embers: .75, flies: 0,  rain: 0, shafts: 0 },
   about:   { mist: .2,  embers: .15, flies: .8, rain: 0, shafts: .9 },
-  arsenal: { mist: .55, embers: 0,   flies: .7, rain: 0, shafts: 1 },
+  arsenal: { mist: .32, embers: 0,   flies: .7, rain: 0, shafts: 1 },
   work:    { mist: .3,  embers: .5,  flies: 0,  rain: 0, shafts: 0 },
   journey: { mist: .5,  embers: .25, flies: .7, rain: 0, shafts: 0 },
   duel:    { mist: .4,  embers: .9,  flies: 0,  rain: 0, shafts: 0 }
 };
 const FOCUS = {          // what the lens holds sharp, and how shallow the focus is
   hero: () => [heroSam.root.position, 1.4, 7, 2.2],
-  about: () => (Math.abs(dojoNin.root.position.x - A.dojo.samurai.x) < 3.5 ? [dojoNin.root.position, 1.1, 3, 3.4] : [dojoSam.root.position, .9, 2.4, 3.4]),
+  about: () => (Math.abs(dojoNin.root.position.x - A.dojo.samurai.x) < 3.5 ? [dojoNin.root.position, 1.1, 3, 3.4] : [dojoSam.root.position, samPhase === 'sit' ? .9 : 1.3, 2.4, 3.4]),
   arsenal: () => [trainNin.root.position, 1, 6, 2.6],
   work: () => [roofNin.root.position, 1.2, 6, 2.4],
   journey: () => [roadSam.root.position, 1.3, 4, 3],

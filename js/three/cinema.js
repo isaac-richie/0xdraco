@@ -133,13 +133,21 @@ function softTexture(size = 128, kind = 'blob') {
     const r = g.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
     r.addColorStop(0, 'rgba(255,255,255,1)'); r.addColorStop(.4, 'rgba(255,255,255,.35)'); r.addColorStop(1, 'rgba(255,255,255,0)');
     g.fillStyle = r; g.fillRect(0, 0, size, size);
-  } else {                                   // wispy mist: layered soft blobs
-    for (let i = 0; i < 40; i++) {
-      const x = Math.random() * size, y = size * (.3 + Math.random() * .4), rr = size * (.08 + Math.random() * .18);
+  } else {                                   // wispy mist: layered soft blobs hugging the bottom of the card
+    for (let i = 0; i < 46; i++) {
+      const x = size * (.12 + Math.random() * .76), y = size * (.5 + Math.random() * .28), rr = size * (.06 + Math.random() * .14);
       const r = g.createRadialGradient(x, y, 0, x, y, rr);
-      r.addColorStop(0, 'rgba(255,255,255,.18)'); r.addColorStop(1, 'rgba(255,255,255,0)');
+      r.addColorStop(0, 'rgba(255,255,255,.2)'); r.addColorStop(1, 'rgba(255,255,255,0)');
       g.fillStyle = r; g.fillRect(0, 0, size, size);
     }
+    // fade every edge to nothing so a card never shows a hard line where it meets the ground or a rock
+    g.globalCompositeOperation = 'destination-in';
+    const v = g.createLinearGradient(0, 0, 0, size);
+    v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(.42, 'rgba(0,0,0,1)'); v.addColorStop(.8, 'rgba(0,0,0,1)'); v.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = v; g.fillRect(0, 0, size, size);
+    const h = g.createLinearGradient(0, 0, size, 0);
+    h.addColorStop(0, 'rgba(0,0,0,0)'); h.addColorStop(.2, 'rgba(0,0,0,1)'); h.addColorStop(.8, 'rgba(0,0,0,1)'); h.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = h; g.fillRect(0, 0, size, size);
   }
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
 }
@@ -152,8 +160,9 @@ export function createAtmosphere(scene, { mobile }) {
   const mistMat = new THREE.MeshBasicMaterial({ map: wisp, transparent: true, depthWrite: false, opacity: .5, color: '#ffd8c0', fog: true });
   const mists = [];
   for (let i = 0; i < (mobile ? 10 : 22); i++) {
-    const m = new THREE.Mesh(new THREE.PlaneGeometry(14, 5), mistMat);
-    m.userData = { a: Math.random() * Math.PI * 2, r: 6 + Math.random() * 22, y: .3 + Math.random() * 1.6, s: .02 + Math.random() * .04 };
+    // 4 m tall cards whose lower edge sits at or just above the ground: the mist band is ~0.8–2 m up
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(14, 4), mistMat);
+    m.userData = { a: Math.random() * Math.PI * 2, r: 6 + Math.random() * 22, y: 2.05 + Math.random() * .6, s: .02 + Math.random() * .04 };
     group.add(m); mists.push(m);
   }
 

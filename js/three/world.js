@@ -229,6 +229,39 @@ function buildBlossoms(parent) {
   parent.add(im);
 }
 
+// tatami floor: 2:1 rush mats in a staggered layout, woven straw with dark cloth borders (heri)
+function tatamiTex() {
+  const PX = 96, Wm = 12, Dm = 9, c = document.createElement('canvas');
+  c.width = Wm * PX; c.height = Dm * PX;
+  const x = c.getContext('2d'), mw = 1.82 * PX, mh = .91 * PX;
+  x.fillStyle = '#a3955c'; x.fillRect(0, 0, c.width, c.height);
+  for (let row = 0; row * mh < c.height; row++) {
+    for (let col = -1; col * mw < c.width + mw; col++) {
+      const ox = col * mw + (row % 2 ? mw / 2 : 0), oy = row * mh;
+      const tone = 0.9 + Math.random() * .16;               // each mat aged a little differently
+      x.fillStyle = `rgb(${163 * tone | 0},${149 * tone | 0},${92 * tone | 0})`; x.fillRect(ox, oy, mw, mh);
+      x.strokeStyle = 'rgba(70,60,30,.22)'; x.lineWidth = 1;
+      for (let k = 2; k < mw; k += 3) { x.beginPath(); x.moveTo(ox + k, oy); x.lineTo(ox + k, oy + mh); x.stroke(); }
+      x.fillStyle = '#2a2217';
+      x.fillRect(ox, oy, mw, 5); x.fillRect(ox, oy + mh - 5, mw, 5);   // heri along the long sides
+      x.fillStyle = 'rgba(30,22,12,.6)'; x.fillRect(ox, oy, 1.5, mh);
+    }
+  }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
+  return t;
+}
+function scrollTex(ch) {
+  const c = document.createElement('canvas'); c.width = 256; c.height = 640;
+  const x = c.getContext('2d');
+  x.fillStyle = '#5a3a24'; x.fillRect(0, 0, 256, 640);                       // silk mounting
+  x.fillStyle = '#e9dcbc'; x.fillRect(28, 70, 200, 470);                       // paper
+  x.fillStyle = '#7a2a20'; x.fillRect(28, 70, 200, 10); x.fillRect(28, 530, 200, 10);
+  x.fillStyle = '#1a120c'; x.font = '700 150px "Shippori Mincho", "Hiragino Mincho ProN", serif';
+  x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(ch, 128, 280);
+  x.fillStyle = '#b3241c'; x.fillRect(150, 440, 34, 34);                       // hanko seal
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+
 function makiwara(parent, x, z, ry) {
   const g = group(parent, x, 0, z, ry);
   cyl(g, .09, .1, 1.7, 6, M.wood(), 0, .85, 0);
@@ -511,12 +544,12 @@ export function buildWorld(scene, { mobile = false } = {}) {
   {
     const D = ST.dojo, g = group(world, D.x, 0, D.z);
     box(g, 17, .5, 15, M.wood(), 0, .25, 0);
-    box(g, 12, .02, 9, mat('tatami', '#9c8a55'), 0, .51, -1);
+    box(g, 12, .02, 9, new THREE.MeshStandardMaterial({ map: tatamiTex(), roughness: .88 }), 0, .51, -1);
     for (const [x, z] of [[-8, -7], [8, -7], [-8, 7], [8, 7], [0, -7], [-8, 0], [8, 0], [-4, 7], [4, 7]]) cyl(g, .26, .28, 5, 8, M.woodDark(), x, 2.75, z);
     hipRoof(g, 20, 18, 3.6, 5.2);
     box(g, 17.4, .2, 15.4, M.woodDark(), 0, 5.12, 0);
 
-    const paper = new THREE.MeshStandardMaterial({ color: '#f3ddb1', emissive: new THREE.Color('#ffb35a'), emissiveIntensity: .75, transparent: true, opacity: .86, side: THREE.DoubleSide, depthWrite: false });
+    const paper = new THREE.MeshStandardMaterial({ color: '#f3ddb1', emissive: new THREE.Color('#ffb35a'), emissiveIntensity: .55, transparent: true, opacity: .86, side: THREE.DoubleSide, depthWrite: false });
     const wall = (w, x, z, ry) => {
       const s = group(g, x, .5, z, ry);
       const p = new THREE.Mesh(new THREE.PlaneGeometry(w, 4.6), paper); p.position.y = 2.3; s.add(p);
@@ -524,11 +557,23 @@ export function buildWorld(scene, { mobile = false } = {}) {
       for (let k = .2; k <= 4.6; k += .78) box(s, w, .07, .09, M.woodDark(), 0, k, 0);
     };
     wall(16, 0, -7, 0); wall(14, -8, 0, Math.PI / 2); wall(14, 8, 0, Math.PI / 2);
-    const light = new THREE.PointLight('#ffb064', 40, 22, 2); light.position.set(0, 3, -1); g.add(light);
-    [-6.6, 6.6].forEach(x => { box(g, .45, .7, .45, M.lamp(), x, .9, -6); box(g, .55, .08, .55, M.woodDark(), x, 1.28, -6); });
+    // lantern key light: in front of and beside her (directly overhead it burnt out her face)
+    const light = new THREE.PointLight('#ffb064', 26, 26, 2); light.position.set(3.2, 3.3, 2.6); g.add(light);
+    // andon floor lanterns: paper glowing softly inside a dark wooden frame
+    const andon = glow('andon', '#ffa552', 1.15);
+    [[-6.6, -6], [6.6, -6], [-6.6, 4.5]].forEach(([x, z]) => {
+      box(g, .38, .62, .38, andon, x, .86, z);
+      for (const [dx, dz] of [[-.2, -.2], [.2, -.2], [-.2, .2], [.2, .2]]) box(g, .04, .78, .04, M.woodDark(), x + dx, .89, z + dz);
+      box(g, .46, .04, .46, M.woodDark(), x, 1.27, z);
+    });
+    // hanging scroll (kakejiku) with the dojo's character
+    const scroll = group(g, -7.85, .5, -2.2, Math.PI / 2);
+    const sp = new THREE.Mesh(new THREE.PlaneGeometry(.9, 2.3), new THREE.MeshStandardMaterial({ map: scrollTex('道'), roughness: .95 }));
+    sp.position.set(0, 2.55, .03); scroll.add(sp);
+    cyl(scroll, .035, .035, 1.05, 8, M.woodDark(), 0, 3.72, .03).rotation.z = Math.PI / 2;
+    cyl(scroll, .045, .045, 1.05, 8, M.woodDark(), 0, 1.38, .03).rotation.z = Math.PI / 2;
     // photoscanned katana stand + antique katana (Poly Haven, CC0), loaded in the background
-    prop('katana_stand_01', g, [0, .5, 1.9], Math.PI, 1);
-    prop('antique_katana_01', g, [0, .52, .55], Math.PI / 2, 1, o => { o.rotation.z = Math.PI / 2; o.rotation.x = Math.PI / 2; });
+    prop('katana_stand_01', g, [-6.2, .5, -4.6], Math.PI / 2 + .35, 1.2);   // weapon rack by the wall
     for (let i = 0; i < 6; i++) sakura(world, D.x + R(-22, 22), 0, D.z + R(-22, -12), R(.8, 1.1));
     for (let i = 0; i < 4; i++) stoneLantern(world, D.x + (i < 2 ? -11 : 11), D.z + 9 + (i % 2) * 5, 1);
     anchors.dojo = { samurai: new THREE.Vector3(D.x, .5, D.z - 1.4), sneak: { z: D.z - 9.6, from: D.x - 14, to: D.x + 14 }, light, paper };
@@ -539,17 +584,20 @@ export function buildWorld(scene, { mobile = false } = {}) {
   {
     const T = ST.train, g = group(world, T.x, 0, T.z);
     grove = bambooGrove(world, T.x - 3, T.z - 6, 17, 36, mobile ? 140 : 260);
-    grassField(g, -3, 0, 26, 22, mobile ? 500 : 1100, '#1f1c12', .15, .5);
-    const rock = add(g, new THREE.Mesh(new THREE.DodecahedronGeometry(1.6, 0), M.rock()), -9.5, .7, 0); rock.scale.set(1.3, .8, 1.1);
+    // the ninja trains on a patch of trampled ground, facing a row of straw targets
+    const NX = -7, NZ = .5;
+    grassField(g, -3, 0, 26, 22, mobile ? 500 : 1100, '#1f1c12', .15, .5, { x: NX, z: NZ, r: 2.6 });
     const targets = [];
     for (let i = 0; i < 5; i++) {
-      const z = -5 + i * 2.5, x = -2.6 + Math.abs(i - 2) * .7;
-      const t = makiwara(g, x, z, -Math.PI / 2 + Math.atan2(z, x + 9.5) * .8);
-      targets.push({ group: t, center: new THREE.Vector3(T.x + x - .05, 1.75, T.z + z) });
+      const z = -4.2 + i * 2.1, x = -2.2 + Math.abs(i - 2) * .55;
+      const t = makiwara(g, x, z, Math.atan2(NX - x, NZ - z));          // straw face turned to the ninja
+      targets.push({ group: t, center: new THREE.Vector3(T.x + x, 1.75, T.z + z) });
     }
-    for (let i = 0; i < 4; i++) stoneLantern(g, R(-12, 4), i < 2 ? -9 : 7, 1);
-    rocks(g, [[-9.5, -3.5, 1.4, .4], [-12, 3, 1.1, 2], [2.5, -9, 1.6, 1], [-4, 7.5, 1.2, 4], [6, 4, .9, 3]]);
-    anchors.train = { ninja: new THREE.Vector3(T.x - 9.5, 1.95, T.z), targets };
+    prop('katana_stand_01', g, [NX - 2.2, 0, NZ - 2.4], .7, 1.15);
+    // lanterns stay behind the training patch (one close to the lens just blooms into a blob)
+    [[-12.5, -7.5], [-3.5, -9.5], [3.5, -7], [-14, 6.5]].forEach(([x, z]) => stoneLantern(g, x, z, 1));
+    rocks(g, [[-11.5, -3.5, 1.4, .4], [-13, 3.5, 1.1, 2], [2.5, -9, 1.6, 1], [-4, 7.5, 1.2, 4], [6, 4, .9, 3]]);
+    anchors.train = { ninja: new THREE.Vector3(T.x + NX, 0, T.z + NZ), targets };
   }
 
   /* --- 戦 rooftop street --- */
@@ -624,7 +672,7 @@ export function buildWorld(scene, { mobile = false } = {}) {
       grassTime.value = t;
       clouds.forEach((c, i) => { c.position.x += Math.sin(t * .05 + i) * .02; });
       lampMat.emissiveIntensity = 3 + Math.sin(t * 9) * .25 + Math.sin(t * 23) * .15;
-      if (anchors.dojo) anchors.dojo.light.intensity = 38 + Math.sin(t * 11) * 3 + Math.sin(t * 27) * 2;
+      if (anchors.dojo) anchors.dojo.light.intensity = 25 + Math.sin(t * 11) * 2 + Math.sin(t * 27) * 1.4;
       if (focus === 'arsenal' || focus === 'about' || focus === 'work') grove.update(t);
       petals.update(t, dt, cam);
     }
