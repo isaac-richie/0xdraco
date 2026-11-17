@@ -1,0 +1,6 @@
+# original Mixamo FBX downloads (~76 MB) — kept locally, not deployed
+source-assets/
+# dev-only pages
+debug.html
+tools/
+.DS_Store

@@ -1,0 +1,105 @@
+/* ==========================================================================
+   three.css — layout for the 3D version: a fixed WebGL world with text on
+   glass panels scrolling over it.
+   ========================================================================== */
+body.three { background: #0b0610; color: var(--paper); }
+#world { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; z-index: 0; }
+.vignette { position: fixed; inset: 0; pointer-events: none; z-index: 1; background: radial-gradient(ellipse at 50% 55%, transparent 45%, rgba(5, 2, 6, .65) 100%); }
+.three .grain { z-index: 2; opacity: .06; }
+.three main, .three .foot { position: relative; z-index: 3; }
+
+.panel { position: relative; padding: 0 var(--gutter); }
+.glass {
+  background: rgba(14, 9, 13, .58); border: 1px solid rgba(239, 230, 211, .12);
+  backdrop-filter: blur(14px) saturate(1.2); -webkit-backdrop-filter: blur(14px) saturate(1.2);
+  border-radius: 4px; box-shadow: 0 30px 80px -30px rgba(0, 0, 0, .7);
+}
+.three .sec-label { color: rgba(239, 230, 211, .55); }
+.three .sec-head { margin-bottom: 26px; }
+.three .sec-kanji { font-size: clamp(64px, 8vw, 120px); color: var(--shu-2); text-shadow: 0 0 40px rgba(226, 72, 44, .35); }
+.three .sec-title { font-size: clamp(30px, 3.6vw, 54px); max-width: 18ch; }
+.glass.slim { padding: 22px 26px; display: inline-flex; }
+.three em { color: var(--shu-2); }
+
+/* hero */
+.three .hero { height: 130vh; min-height: 0; background: none; overflow: visible; }
+.three .hero-content { position: sticky; top: 0; left: auto; right: auto; height: 100vh; display: flex; flex-direction: column; justify-content: center; transform: none; left: auto; max-width: 660px; }
+.three .hero-title { text-shadow: 0 6px 40px rgba(0, 0, 0, .55); }
+.three .scroll-cue { position: absolute; bottom: 32vh; }
+
+/* about */
+.about { height: 230vh; }
+.glass.sticky { position: sticky; top: 12vh; padding: clamp(26px, 3vw, 40px); width: min(560px, 100%); }
+.glass.right { margin-left: auto; }
+.about .lede { font-family: var(--f-display); font-weight: 700; font-size: clamp(20px, 1.9vw, 28px); line-height: 1.3; margin-bottom: 14px; }
+.about p { margin-bottom: 12px; color: rgba(239, 230, 211, .86); font-size: 16px; }
+.three .stats { border-top-color: rgba(239, 230, 211, .4); margin-top: 22px; }
+.three .stat + .stat { border-left-color: rgba(239, 230, 211, .14); }
+.three .stat span { color: rgba(239, 230, 211, .55); }
+
+/* arsenal */
+.arsenal { padding-top: 30vh; padding-bottom: 60vh; }
+.col.right { margin-left: auto; width: min(560px, 100%); }
+.three .skills { gap: 18px; margin-top: 30vh; }
+.three .skill-card { padding: 24px 26px; margin-bottom: 18vh; }
+.three .skill-card:last-child { margin-bottom: 0; }
+.three .skill-card .card-kanji { font-size: 96px; color: rgba(226, 72, 44, .14); }
+.three .skill-card.hit .card-kanji { color: rgba(226, 72, 44, .3); }
+
+/* campaigns */
+.work { background: none; }
+.work-sticky { position: sticky; top: 0; height: 100vh; overflow: hidden; display: flex; flex-direction: column; padding-top: 86px; }
+.three .work .sec-head { padding: 0 var(--gutter); margin-bottom: 18px; }
+.three .work .sec-kanji { font-size: clamp(56px, 6vw, 96px); }
+.three .work .sec-title { font-size: clamp(28px, 3vw, 46px); }
+.three .work .track { padding: 0 var(--gutter); }
+.three .card {
+  height: clamp(250px, 36vh, 340px); width: clamp(280px, 25vw, 380px); padding: 22px;
+  background: rgba(14, 9, 13, .66); border: 1px solid rgba(239, 230, 211, .14);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+}
+.three .card h3 { font-size: clamp(22px, 1.8vw, 28px); margin: 10px 0; }
+.three .card p:not(.meta) { font-size: 14px; }
+.three .card-more { background: rgba(200, 50, 31, .85); }
+
+/* journey */
+.three .journey { padding-top: 24vh; padding-bottom: 50vh; background: none; }
+.three .about, .three .arsenal { background: none; }
+.three .mile { width: min(420px, 100%); margin-bottom: 70vh; padding: 24px 26px; border: 1px solid rgba(239, 230, 211, .14); box-shadow: 0 30px 80px -30px rgba(0, 0, 0, .7); background: rgba(14, 9, 13, .6); }
+.three .mile.r { margin-left: auto; }
+.three .mile.l { margin-right: auto; }
+.three .mile:last-child { margin-bottom: 0; }
+.three .mile p:not(.when) { color: rgba(239, 230, 211, .8); }
+.three .mile .when { color: var(--shu-2); }
+.three .mile.lit { box-shadow: 0 0 0 1px var(--shu-2), 0 30px 80px -30px rgba(200, 50, 31, .6); transform: translateY(-4px); }
+.journey > .sec-head { margin-bottom: 60vh; }
+
+/* duel */
+.three .duel { height: 560vh; background: none; }
+.duel-sticky { position: sticky; top: 0; height: 100vh; }
+.three .duel-cta { position: absolute; left: 0; right: 0; top: 14vh; margin: 0 auto; width: min(900px, calc(100% - 2 * var(--gutter))); transform: none; opacity: 0; visibility: hidden; }
+.three .duel-cta .red { color: #ffcf9a; }
+.three .duel-caption { position: absolute; left: var(--gutter); bottom: 30px; }
+
+/* overlays */
+.three .cine { position: fixed; z-index: 4; }
+.flash { position: fixed; inset: 0; z-index: 4; background: #fff8ec; opacity: 0; pointer-events: none; }
+.streak-layer { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 4; pointer-events: none; }
+.slash-streak { stroke-dasharray: 1300; stroke-dashoffset: 1300; filter: drop-shadow(0 0 10px #ffb07a); }
+.three .foot { background: rgba(10, 6, 9, .9); }
+.three .nav { z-index: 80; }
+
+@media (max-width: 760px) {
+  .three .hero-content { justify-content: flex-start; padding-top: 110px; }
+  .glass.sticky { top: auto; position: relative; margin-top: 40vh; }
+  .about { height: auto; padding-bottom: 60vh; }
+  .three .skills { margin-top: 40vh; }
+  .three .work { height: auto !important; }
+  .work-sticky { position: relative; height: auto; overflow: visible; padding: 30vh 0 40vh; }
+  .three .work .track { flex-direction: column; width: auto; transform: none !important; gap: 30vh; }
+  .three .card { width: 100%; height: auto; min-height: 240px; }
+  .three .mile, .three .mile.l, .three .mile.r { width: auto; margin-left: 0; margin-right: 0; margin-bottom: 60vh; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .three .duel-cta { opacity: 1; visibility: visible; }
+}

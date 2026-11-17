@@ -1,0 +1,32 @@
+{
+  "samurai": {
+    "model": "assets/models/samurai.glb",
+    "scale": 0.01,
+    "clips": "embedded",
+    "keepRoot": [
+      "duel"
+    ],
+    "timing": {
+      "duelGap": 0.8,
+      "clashes": [
+        0.165,
+        0.33,
+        0.517
+      ],
+      "cutAt": 0.706,
+      "fallAt": 0.775,
+      "drawAt": 0.42
+    }
+  },
+  "ninja": {
+    "model": "assets/models/ninja.glb",
+    "scale": 0.01,
+    "clips": "embedded",
+    "keepRoot": [
+      "duel"
+    ],
+    "clipYaw": {
+      "duel": 180
+    }
+  }
+}
