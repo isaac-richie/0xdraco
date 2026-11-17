@@ -16,6 +16,10 @@
       "cutAt": 0.706,
       "fallAt": 0.775,
       "drawAt": 0.42
+    },
+    "gait": {
+      "walk": 1.28,
+      "run": 4.2
     }
   },
   "ninja": {
@@ -27,6 +31,11 @@
     ],
     "clipYaw": {
       "duel": 180
+    },
+    "gait": {
+      "run": 5.13,
+      "sneak": 2.37,
+      "roll": 1.9
     }
   }
 }

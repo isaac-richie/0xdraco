@@ -5,7 +5,7 @@
 import * as THREE from 'three';
 import { buildWorld, ST, shurikenMesh } from './world.js?v=13';
 import { createPipeline, loadHDRI, createAtmosphere, blendLook } from './cinema.js?v=13';
-import { loadCast, Character, manager, TEMPO } from './characters.js?v=10';
+import { loadCast, Character, manager, TEMPO } from './characters.js?v=12';
 
 gsap.registerPlugin(ScrollTrigger);
 const $ = (s, r = document) => r.querySelector(s), $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -84,16 +84,16 @@ heroN[1].root.scale.setScalar(.93);
 const dojoSam = mk('samurai', 'about');
 dojoSam.root.position.copy(A.dojo.samurai); dojoSam.root.rotation.y = .35; dojoSam.setArmed(false); dojoSam.play('meditate');
 const dojoNin = mk('ninja', 'about');
-dojoNin.root.position.set(A.dojo.sneak.from, 0, A.dojo.sneak.z); dojoNin.play('crouch');
+dojoNin.root.position.set(A.dojo.sneak.from, 0, A.dojo.sneak.z); dojoNin.snapFace(Math.PI / 2); dojoNin.play('crouch');
 
 const trainNin = mk('ninja', 'arsenal');
 trainNin.root.position.copy(A.train.ninja); trainNin.root.rotation.y = Math.PI / 2; trainNin.play('idle');
 
 const roofNin = mk('ninja', 'work');
-roofNin.play('crouch');
+roofNin.snapFace(Math.PI / 2); roofNin.play('crouch');
 
 const roadSam = mk('samurai', 'journey');
-roadSam.setArmed(false); roadSam.root.position.set(A.road.x, 0, A.road.z0); roadSam.root.rotation.y = Math.PI; roadSam.play('idle');
+roadSam.setArmed(false); roadSam.root.position.set(A.road.x, 0, A.road.z0); roadSam.snapFace(Math.PI); roadSam.play('idle');
 
 const duelSam = mk('samurai', 'duel'), duelNin = mk('ninja', 'duel');
 duelSam.root.rotation.y = Math.PI / 2; duelNin.root.rotation.y = -Math.PI / 2;
@@ -105,32 +105,82 @@ heroN.forEach(n => { n.shadow.visible = false; });
 
 const cfg = (c, k, d) => (cast[c.kind]?.def?.timing?.[k] ?? d);
 
-// a fighter running drills: holds a ready stance, then performs a random technique and settles back
-function drills(c, stance, moves, { rest = [1.4, 2.6], onMove } = {}) {
-  let move = null, wait = rest[0], last = null;
+// a fighter running drills up and down a lane: holds a ready stance, performs a technique (its root
+// motion carries the body forward, so the feet stay planted), and turns around at the end of the lane
+const yawOf = d => Math.atan2(d.x, d.z);
+function drills(c, stance, moves, { rest = [1.4, 2.6], lane, onMove } = {}) {
+  let move = null, wait = rest[0], last = null, turning = false;
   const nextWait = () => rest[0] + Math.random() * (rest[1] - rest[0]);
+  const off = V(0, 0, 0), along = V(0, 0, 0);
+  const L = lane.b.clone().sub(lane.a), len = L.length(), dirB = L.clone().normalize();
+  // the lane end the fighter is facing, and how much room is left before it
+  const heading = () => { const f = V(Math.sin(c.root.rotation.y), 0, Math.cos(c.root.rotation.y)); return f.dot(dirB) >= 0 ? 1 : -1; };
+  const room = h => { const t = along.copy(c.root.position).sub(lane.a).dot(dirB); return h > 0 ? len - t : t; };
   return {
-    cancel() { move = null; wait = nextWait(); },
+    cancel() { if (move) { move = null; c.play(stance, { fade: .4 }); } wait = nextWait(); },
     update(dt) {
       if (move) {
         move.t += dt;
-        const a = c.current, fr = a && c.state === move.name ? a.time / a.getClip().duration : 1;
-        if (fr >= .96 || move.t > move.max) { move = null; wait = nextWait(); c.play(stance, { fade: .45 }); }
+        const a = c.current, on = a && c.state === move.name, fr = on ? a.time / a.getClip().duration : 1;
+        if (on) { c.rootAt(move.name, a.time, off).applyAxisAngle(UP, move.yaw); c.root.position.copy(move.from).add(off); }
+        if (fr >= .97 || move.t > move.max) { move = null; wait = nextWait(); c.play(stance, { fade: .45 }); }
         return;
       }
       if (c.state !== stance) c.play(stance, { fade: .45 });
+      const h = heading();
+      if (!turning) c.face(yawOf(dirB.clone().multiplyScalar(h)), 4);      // square up to the lane while resting
       if ((wait -= dt) > 0) return;
-      const pool = moves.filter(m => c.has(m) && m !== last);
-      if (!pool.length) { wait = nextWait(); return; }
+      turning = false;
+      const r = room(h);
+      let pool = moves.filter(m => c.has(m) && c.travel(m) <= r + .15);
+      if (pool.length > 1) pool = pool.filter(m => m !== last);         // vary the techniques when there's a choice
+      // turn around when nothing fits, when cornered, or when only the big travelling techniques would fit the other way
+      const bigFits = rr => moves.some(m => c.has(m) && c.travel(m) > .35 && c.travel(m) <= rr + .15);
+      if (!pool.length || (r < len * .3 && Math.random() < .5) || (!bigFits(r) && bigFits(len - r) && Math.random() < .7)) {
+        // out of room: turn to face back down the lane, settle, then go again
+        c.face(yawOf(dirB.clone().multiplyScalar(-h)), 2.8); turning = true; wait = 1.8; return;
+      }
       const name = last = pool[Math.floor(Math.random() * pool.length)];
       const a = c.play(name, { loop: false, fade: .3, restart: true });
-      move = { name, t: 0, max: a ? a.getClip().duration / a.timeScale + .4 : 2 };
+      c.yawGoal = c.root.rotation.y;             // the technique travels the way the body actually faces
+      move = { name, t: 0, max: a ? a.getClip().duration / a.timeScale + .4 : 2, from: c.root.position.clone(), yaw: c.root.rotation.y };
       onMove && onMove(name);
     }
   };
 }
-const ninDrill = drills(trainNin, 'idle', ['kick', 'flipkick', 'hurricane'], { rest: [2.2, 3.6], onMove: () => setTimeout(() => sfx.whoosh(.16), 380 / TEMPO) });
-const samDrill = drills(dojoSam, 'ready', ['combo', 'power'], { rest: [2.2, 3.4], onMove: n => [.42, n === 'combo' ? 1.3 : null, n === 'combo' ? 2.2 : null].forEach(t => t && setTimeout(() => sfx.slash(.16), t * 1000 / TEMPO)) });
+const UP = V(0, 1, 0);
+// the ninja drills toward the straw targets and back; the samurai along the tatami, toward the lens and away
+const NL = A.train.ninja, DL = A.dojo.samurai;
+trainNin.root.position.copy(NL).add(V(-3, 0, .25)); trainNin.snapFace(Math.PI / 2);
+const ninDrill = drills(trainNin, 'idle', ['kick', 'flipkick', 'hurricane'], { rest: [2.2, 3.6], lane: { a: NL.clone().add(V(-3, 0, .25)), b: NL.clone().add(V(2.6, 0, -.25)) }, onMove: () => setTimeout(() => sfx.whoosh(.16), 380 / TEMPO) });
+const samDrill = drills(dojoSam, 'ready', ['combo', 'power'], { rest: [2.2, 3.4], lane: { a: DL.clone().add(V(-.7, 0, -3.4)), b: DL.clone().add(V(.45, 0, 1.6)) }, onMove: n => [.42, n === 'combo' ? 1.3 : null, n === 'combo' ? 2.2 : null].forEach(t => t && setTimeout(() => sfx.slash(.16), t * 1000 / TEMPO)) });
+dojoSam.snapFace(.35);
+
+// scroll-driven walkers. Scroll arrives in bursts, so a gait played by time always lags and the
+// feet skate. Instead the clip is stride-locked: it advances by the distance actually covered,
+// divided by how far that gait carries the body per second of animation. Planted feet stay planted.
+function stride(c, name, dist) {
+  const a = c.actions[name]; if (!a) return;
+  a.paused = true;
+  const d = a.getClip().duration;
+  a.time = ((a.time + Math.abs(dist) / c.gait(name)) % d + d) % d;
+}
+function locomote(c, dist, dt, { slow, fast, fastAt = Infinity, idle = 'idle' }) {
+  c._v = lerp(c._v || 0, dist / Math.max(dt, 1e-3), 1 - Math.exp(-dt * 6));
+  const sp = Math.abs(c._v);
+  if (sp < (c._moving ? .05 : .1)) {
+    c._moving = false;
+    if (c.state !== idle) c.play(idle, { fade: .45 });
+    [slow, fast].forEach(n => stride(c, n, dist));            // a gait still fading out keeps stepping in time
+    return 0;
+  }
+  c._moving = true;
+  const quick = c.state === fast ? sp > fastAt * .8 : sp > fastAt;
+  const name = quick && c.has(fast) ? fast : slow;
+  if (c.state !== name) c.play(name, { fade: .3 });
+  [slow, fast].forEach(n => stride(c, n, dist));
+  return c._v;
+}
 let samPhase = 'sit';
 
 /* ---------- fx: sparks + flying shuriken ---------- */
@@ -249,9 +299,9 @@ const CAM = {
   },
   // low three-quarter shot: the ninja in the left third, his straw targets receding behind the cards
   arsenal: k => {
-    const N = A.train.ninja;
-    if (camera.aspect < 1) return { p: V(N.x - 1.5 - k * .5, 1.45, N.z + 6.6 - k * .6), l: V(N.x + .7, 1.15, N.z - .6) };   // phones: centre the ninja
-    return { p: V(N.x - 2.4 - k * .9, 1.3, N.z + 5.4 - k * .7), l: V(N.x + 3.1, 1.2, N.z - 1) };
+    const N = A.train.ninja, fx = trainNin.root.position.x - N.x;           // he drills up and down a lane: follow him
+    if (camera.aspect < 1) return { p: V(N.x + fx - 1.5 - k * .5, 1.45, N.z + 6.6 - k * .6), l: V(N.x + fx + .7, 1.15, N.z - .6) };   // phones: centre the ninja
+    return { p: V(N.x + fx * .35 - 2.4 - k * .9, 1.3, N.z + 5.4 - k * .7), l: V(N.x + fx * .35 + 3.1, 1.2, N.z - 1) };
   },
   // tracking shot alongside the run: low and closer, so he runs along the bottom of the frame under the cards
   work: () => {
@@ -344,7 +394,15 @@ function frameCamera(dt) {
 }
 
 /* ---------- station choreography ---------- */
-const W = A.hero.wall, NSPEED = 6.4, travel = (W.to - W.from) / NSPEED, DEL = [0, .8], PERIOD = travel + DEL[1] + 3;
+// they sprint at the run clip's natural pace (feet locked to the wall) and carry extra speed through the leap
+const W = { ...A.hero.wall, from: -50, to: 50 }, NSPEED = 4.9, LEAP = [W.gap[0] - 2, W.gap[1] + 2], LEAPX = 1.7;
+const pathLen = (W.to - W.from) + (LEAP[1] - LEAP[0]) * (1 / LEAPX - 1);       // in run-time metres
+const travel = pathLen / NSPEED, DEL = [0, .8], PERIOD = travel + DEL[1] + 3;
+// distance along the wall after running for t seconds (faster across the leap)
+function wallX(t) {
+  const d = t * NSPEED, a = LEAP[0] - W.from, b = a + (LEAP[1] - LEAP[0]) / LEAPX;
+  return W.from + (d < a ? d : d < b ? a + (d - a) * LEAPX : (LEAP[1] - W.from) + (d - b));
+}
 let nClock = 1.5, nDir = 1, drawState = 0, glintIn = 6;
 
 const stations = {
@@ -355,15 +413,15 @@ const stations = {
       const local = nClock - DEL[i];
       if (local < 0 || local > travel) { n.root.visible = false; return; }
       n.root.visible = true;
-      let xr = W.from + local * NSPEED; if (nDir < 0) xr = W.to - (xr - W.from);
+      let xr = wallX(local); if (nDir < 0) xr = W.to - (xr - W.from);
       let y = W.y;
-      const a = W.gap[0] - 3.5, b = W.gap[1] + 3.5;
+      const a = LEAP[0], b = LEAP[1];
       if (xr > a && xr < b) {
         const u = (xr - a) / (b - a);
-        y += Math.sin(Math.PI * u) * 2.4;
+        y += Math.sin(Math.PI * u) * 2.8;
         if (n.has('flip')) n.scrub('flip', nDir > 0 ? u : 1 - u, .1); else n.play('run');
         if (!n._air) { n._air = true; sfx.whoosh(.1); }
-      } else { n._air = false; n.play('run', { speed: .88, fade: .15 }); }
+      } else { n._air = false; n.play('run', { speed: NSPEED / n.gait('run'), fade: .15 }); }
       n.root.position.set(ST.hero.x + xr, y, W.z);
       n.root.rotation.y = nDir > 0 ? Math.PI / 2 : -Math.PI / 2;
     });
@@ -377,9 +435,8 @@ const stations = {
   about(dt) {
     const S = A.dojo.sneak, k = prog.about;
     const x = lerp(S.from, S.to, easeInOut(range(k, .08, .85)));
-    const v = (x - dojoNin.root.position.x) / Math.max(dt, 1e-3);
-    if (Math.abs(v) > .15) { dojoNin.play('sneak', { speed: clamp(Math.abs(v) / 1.3, .4, 1.8) }); dojoNin.root.rotation.y = v > 0 ? Math.PI / 2 : -Math.PI / 2; }
-    else dojoNin.play('crouch', { fade: .4 });
+    const v = locomote(dojoNin, x - dojoNin.root.position.x, dt, { slow: 'sneak', fast: 'run', fastAt: 3.6, idle: 'crouch' });
+    if (Math.abs(v) > .25) dojoNin.face(v > 0 ? Math.PI / 2 : -Math.PI / 2, 7);
     dojoNin.root.position.x = x;
     const near = Math.abs(x - A.dojo.samurai.x) < 2.5;
     if (near && !dojoNin._near) sfx.pluck();
@@ -387,7 +444,7 @@ const stations = {
 
     // she meditates as you arrive, then rises, draws and runs her kata
     if (k < .12) {
-      if (samPhase !== 'sit') { samPhase = 'sit'; samDrill.cancel(); dojoSam.setArmed(false); dojoSam.play('meditate', { fade: .9 }); }
+      if (samPhase !== 'sit') { samPhase = 'sit'; samDrill.cancel(); dojoSam.setArmed(false); dojoSam.face(.35, 3); dojoSam.play('meditate', { fade: .9 }); }
     } else if (samPhase === 'sit') {
       samPhase = 'draw'; dojoSam.play('draw', { loop: false, fade: .8, restart: true });
     } else if (samPhase === 'draw') {
@@ -398,7 +455,12 @@ const stations = {
   },
 
   arsenal(dt) {
-    if (!throwing && throwQ.length) { ninDrill.cancel(); throwing = { ...throwQ.shift(), t: 0, fired: false }; trainNin.play('throw', { loop: false, fade: .15, restart: true, speed: 1.15 }); }
+    if (!throwing && throwQ.length) {
+      ninDrill.cancel(); throwing = { ...throwQ.shift(), t: 0, fired: false };
+      const tg = A.train.targets[throwing.i % A.train.targets.length].center, p = trainNin.root.position;
+      trainNin.face(Math.atan2(tg.x - p.x, tg.z - p.z), 9);          // square up to the target during the wind-up
+      trainNin.play('throw', { loop: false, fade: .25, restart: true, speed: 1.15 });
+    }
     if (!throwing) { ninDrill.update(dt); return; }
     if (throwing) {
       throwing.t += dt;
@@ -414,26 +476,29 @@ const stations = {
 
   work(dt) {
     const F = A.roofs, k = prog.work;
-    const wx = ST.roofs.x + 3 + k * (F.length - 10);
+    const wx = ST.roofs.x + 3 + k * Math.min(F.length - 10, mobile ? 52 : 68);
     const r = F.at(wx), p = roofNin.root.position;
     const v = (wx - p.x) / Math.max(dt, 1e-3);
-    if (Math.abs(v) > .25) roofNin.root.rotation.y = v > 0 ? Math.PI / 2 : -Math.PI / 2;
-    const fwd = roofNin.root.rotation.y > 0;
+    roofNin._v = lerp(roofNin._v || 0, v, 1 - Math.exp(-dt * 7));
+    if (Math.abs(roofNin._v) > .3) roofNin.face(roofNin._v > 0 ? Math.PI / 2 : -Math.PI / 2, 8);
+    const fwd = (roofNin.yawGoal ?? Math.PI / 2) > 0;
     if (r.u >= 0) {
       if (roofNin.has('flip')) roofNin.scrub('flip', fwd ? r.u : 1 - r.u, .1); else roofNin.play('run');
       if (!roofNin._air && Math.abs(v) > 2) sfx.whoosh(.16);
       roofNin._air = true;
     } else {
-      if (roofNin._air && Math.abs(v) > 1) sfx.land(.2);
+      const landed = roofNin._air;
+      if (landed && Math.abs(v) > 1) sfx.land(.2);
       roofNin._air = false;
       const into = fwd ? r.into : r.outOf;
-      if (roofNin.has('roll') && Math.abs(v) > 1.5 && into != null && into < 3.4) {
-        roofNin.scrub('roll', range(into, 0, 3.4) * .85, .08);
-      } else if (Math.abs(v) > .6) {
-        roofNin.play('run', { speed: clamp(Math.abs(v) / 7, .45, 1.9), fade: .2 });
+      if (roofNin.state === 'roll' && roofNin.current && roofNin.current.time < roofNin.current.getClip().duration * .92) {
+        stride(roofNin, 'roll', wx - p.x);                     // the landing roll, stride-locked like the run
+      } else if (roofNin.has('roll') && landed && Math.abs(roofNin._v) > 2.5 && into != null && into < 1.5) {
+        roofNin.play('roll', { loop: false, restart: true, fade: .1 }); stride(roofNin, 'roll', 0);
+      } else if (locomote(roofNin, wx - p.x, dt, { slow: 'sneak', fast: 'run', fastAt: 2.4, idle: 'crouch' })) {
         roofNin._d = (roofNin._d || 0) + Math.abs(wx - p.x);
         if (roofNin._d > 1.7) { roofNin._d = 0; sfx.step(.08); }
-      } else roofNin.play('crouch', { fade: .45 });
+      }
     }
     roofNin.shadow.visible = r.u < 0;
     p.set(wx, r.y, F.z);
@@ -442,13 +507,12 @@ const stations = {
   journey(dt) {
     const k = prog.journey, R = A.road;
     const z = lerp(R.z0, R.z1, k), p = roadSam.root.position;
-    const v = (z - p.z) / Math.max(dt, 1e-3);
-    if (Math.abs(v) > .12) {
-      roadSam.play('walk', { speed: clamp(Math.abs(v) / 1.4, .5, 2), fade: .25 });
-      roadSam.root.rotation.y = v < 0 ? Math.PI : 0;
+    const v = locomote(roadSam, z - p.z, dt, { slow: 'walk', fast: 'run', fastAt: 2.3 });
+    if (v) {
+      roadSam.face(v < 0 ? Math.PI : 0, 6);
       roadSam._d = (roadSam._d || 0) + Math.abs(z - p.z);
       if (roadSam._d > 1.3) { roadSam._d = 0; sfx.step(.05); }
-    } else roadSam.play('idle', { fade: .5 });
+    }
     p.set(R.x, 0, z);
   },
 
@@ -509,8 +573,9 @@ function duelUpdate(dt) {
   if (k < .06) { duelSam.play('idle'); duelNin.play('crouch'); }
   else if (k < .17 && duelSam.has('bow')) { const b = range(k, .06, .16); duelSam.scrub('bow', b, .3); duelNin.scrub('bow', b, .3); }
   else if (k < .27) {
-    const sp = clamp(Math.abs(vS) / 5, .3, 1.6);
-    duelSam.play('run', { speed: sp, fade: .25 }); duelNin.play('run', { speed: sp, fade: .25 });
+    const ds = vS * Math.max(dt, 1e-3);              // distance covered this frame (positions were already moved above)
+    if (duelSam.state !== 'run') { duelSam.play('run', { fade: .25 }); duelNin.play('run', { fade: .25 }); }
+    stride(duelSam, 'run', ds); stride(duelNin, 'run', ds);
   } else if (real) { duelSam.scrub('duel', ft, .2); duelNin.scrub('duel', ft, .2); }
   else { duelSam.play('idle'); duelNin.play('crouch'); }
 

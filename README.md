@@ -50,6 +50,7 @@ Then open http://localhost:5173.
 - **Atmosphere:** drifting mist, embers, fireflies, wind-blown sakura petals, light shafts, and rain with a lightning strike on the final cut.
 - **Direction:** an opening crane shot, chapter title cards between scenes, bows before the duel, and a ninja roll when he lands on the rooftops.
 - **Pacing:** sword techniques and kicks play at 78% of real time so every move reads clearly, faint light trails follow fast blade strokes, and every fighter has a soft contact shadow.
+- **Natural movement:** travelling techniques (the flying kicks and sword combos) use their captured root motion, so the fighters really advance across the floor, drill up and down a lane and turn at the end, rather than skating in place. In-place clips keep their captured hip sway. Walks, runs and sneaks are stride-locked: each clip advances by the distance actually covered (measured gait speeds live in `assets/manifest.json`), so planted feet stay planted however bursty the scroll. Characters turn smoothly instead of snapping 180°.
 - **Phones:** the resolution adapts to hold the frame rate. Phones get FXAA in place of SMAA, half the sun-ray samples and no depth of field, and their glass panels use solid tint because live blur is too costly there.
 
 ## Credits

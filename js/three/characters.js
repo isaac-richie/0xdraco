@@ -71,6 +71,7 @@ export async function loadCast() {
       let base;
       if (def.clips === 'embedded') {          // compressed GLB: model + named clips in one file
         base = await load(def.model);
+        const roots = rootTracks(base.scene, base.animations, def, keep);
         base.animations.forEach(c => {
           if (keep.has(c.name)) {
             const k = c.clone();
@@ -79,9 +80,10 @@ export async function loadCast() {
               if (/Hips\.position$/.test(t.name)) { const v = t.values, x0 = v[0], z0 = v[2]; for (let i = 0; i < v.length; i += 3) { v[i] -= x0; v[i + 2] -= z0; } }
             });
             map[c.name] = k;
-          } else map[c.name] = cleanClip(c, c.name);
+          } else if (roots[c.name]) map[c.name] = cleanClip(c, c.name);   // travels: pinned here, the root follows instead
+          else map[c.name] = c;                                             // in place: keep the captured hip sway, so planted feet stay planted
         });
-        cast[kind] = { base: base.scene, clips: map, def };
+        cast[kind] = { base: base.scene, clips: map, def, roots };
         return;
       }
       const [b, ...clips] = await Promise.all([load(def.model), ...Object.entries(def.clips || {}).map(([n, u]) => getClip(n, u).then(c => c && [n, c]))]);
@@ -91,6 +93,32 @@ export async function loadCast() {
     } catch (e) { console.warn('model', kind, e); }
   }));
   return cast;
+}
+
+// Root motion: attacks like the flying kick carry the body metres forward. The clips are pinned in
+// place for the mixer, so record where the hips travel and let the character's root follow that
+// path instead: the feet then stay planted rather than skating.
+function rootTracks(base, clips, def, keep) {
+  const out = {}, N = 90, s = def.scale ?? .01;
+  const m = SkeletonUtils.clone(base); m.scale.setScalar(s);
+  let hips = null; m.traverse(o => { if (o.isBone && /Hips$/.test(o.name)) hips = hips || o; });
+  if (!hips) return out;
+  const mixer = new THREE.AnimationMixer(m), p = new THREE.Vector3();
+  clips.forEach(c => {
+    if (keep.has(c.name)) return;
+    mixer.stopAllAction(); const a = mixer.clipAction(c); a.reset().play();
+    const xz = new Float32Array((N + 1) * 2); let x0 = 0, z0 = 0;
+    for (let i = 0; i <= N; i++) {
+      mixer.setTime(c.duration * i / N * .9999); m.updateMatrixWorld(true); hips.getWorldPosition(p);
+      if (!i) { x0 = p.x; z0 = p.z; }
+      xz[i * 2] = p.x - x0; xz[i * 2 + 1] = p.z - z0;
+    }
+    a.stop();
+    const travel = Math.hypot(xz[N * 2], xz[N * 2 + 1]);
+    if (travel > .35) out[c.name] = { xz, N, dur: c.duration, travel };   // only clips that really go somewhere
+  });
+  mixer.uncacheRoot(m);
+  return out;
 }
 
 /* ---------- look: dark ink body, fiery rim light from the sun ---------- */
@@ -217,6 +245,7 @@ export class Character {
       this.model.traverse(b => { if (b.isBone) this.bones[b.name.replace(/^mixamorig:?/, '').replace(/^.*?(Hips|Spine|Neck|Head|Left|Right)/, '$1')] = b; });
       this.unit = 1 / s;
       this.propCfg = asset.def.props || {};
+      this.roots = asset.roots || {}; this.gaits = asset.def.gait || {};
     } else this._standIn();
     this._dress(o);
     this.shadow = contactShadow(); this.shadow.position.y = .02; this.root.add(this.shadow);
@@ -281,6 +310,19 @@ export class Character {
 
   has(name) { return !!this.actions[name]; }
 
+  // metres per second a locomotion clip covers at speed 1 (measured from the planted foot)
+  gait(name) { return this.gaits[name] || (name === 'run' ? 4.5 : name === 'walk' ? 1.3 : 2); }
+  // how far a clip carries the body, and where the hips are (in the character's facing frame) at a time
+  travel(name) { return this.roots?.[name]?.travel || 0; }
+  rootAt(name, time, out) {
+    const r = this.roots?.[name]; if (!r) return out.set(0, 0, 0);
+    const f = THREE.MathUtils.clamp(time / r.dur, 0, 1) * r.N, i = Math.min(r.N - 1, Math.floor(f)), u = f - i;
+    return out.set(r.xz[i * 2] + (r.xz[i * 2 + 2] - r.xz[i * 2]) * u, 0, r.xz[i * 2 + 1] + (r.xz[i * 2 + 3] - r.xz[i * 2 + 1]) * u);
+  }
+  // turn smoothly toward a heading instead of snapping (rate: how quickly, per second)
+  face(yaw, rate = 6) { this.yawGoal = yaw; this.yawRate = rate; }
+  snapFace(yaw) { this.yawGoal = yaw; this.yawRate = this.yawRate || 6; this.root.rotation.y = yaw; }
+
   play(name, { fade = .3, loop = true, speed = 1, restart = false } = {}) {
     let a = this.actions[name] || this.actions[FALLBACK[name]] || this.actions.idle || this.actions.crouch;
     this.state = name; this.speed = speed;
@@ -326,6 +368,10 @@ export class Character {
   update(dt) {
     this.t += dt;
     if (this.mixer) this.mixer.update(dt);
+    if (this.yawGoal != null) {
+      const r = this.root.rotation, d = Math.atan2(Math.sin(this.yawGoal - r.y), Math.cos(this.yawGoal - r.y));
+      r.y += d * (1 - Math.exp(-dt * (this.yawRate || 6)));
+    }
     // keep the contact shadow under the hips, fading as the body leaves the ground
     const hips = this.bones.Hips;
     if (hips && this.shadow.visible) {
