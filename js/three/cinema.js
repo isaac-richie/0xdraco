@@ -12,6 +12,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
+import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
 
 const { lerp, clamp } = THREE.MathUtils;
 
@@ -35,13 +36,13 @@ const FilmShader = {
       vec3 col = vec3(texture2D(tDiffuse, vUv + off).r, texture2D(tDiffuse, vUv).g, texture2D(tDiffuse, vUv - off).b);
       // screen-space light scattering from the sun (bright sky streams past dark silhouettes)
       if (rays * sunVis > .01) {
-        vec2 dir = (vUv - sun) / 28.0; vec2 uv = vUv; float decay = 1.0; vec3 acc = vec3(0.0);
-        for (int i = 0; i < 28; i++) {
+        vec2 dir = (vUv - sun) / float(RAYS); vec2 uv = vUv; float decay = 1.0; vec3 acc = vec3(0.0);
+        for (int i = 0; i < RAYS; i++) {
           uv -= dir;
           vec3 s = texture2D(tDiffuse, uv).rgb;
-          acc += max(s - .55, 0.0) * decay; decay *= .93;
+          acc += max(s - .55, 0.0) * decay; decay *= DECAY;
         }
-        col += acc * .085 * rays * sunVis * vec3(1.0, .82, .62);
+        col += acc * (.085 * 28.0 / float(RAYS)) * rays * sunVis * vec3(1.0, .82, .62);
       }
       col += brightness;
       col = (col - .5) * (1.0 + contrast) + .5;
@@ -63,9 +64,14 @@ export function createPipeline(renderer, scene, camera, sun, { mobile }) {
   const ub = new UnrealBloomPass(new THREE.Vector2(innerWidth / 2, innerHeight / 2), .85, .62, .78);
   composer.addPass(ub);
   composer.addPass(new OutputPass());
-  const film = new ShaderPass(FilmShader);
+  // phones: cheap FXAA instead of SMAA, and half the sun-ray samples
+  const fxaa = mobile ? new ShaderPass(FXAAShader) : null;
+  if (fxaa) composer.addPass(fxaa);
+  const film = new ShaderPass({ ...FilmShader, defines: mobile ? { RAYS: 14, DECAY: '.865' } : { RAYS: 28, DECAY: '.93' } });
   composer.addPass(film);
   if (!mobile) composer.addPass(new SMAAPass(innerWidth * renderer.getPixelRatio(), innerHeight * renderer.getPixelRatio()));
+  const sizeFxaa = () => { if (fxaa) { const r = renderer.getPixelRatio(); fxaa.material.uniforms.resolution.value.set(1 / (innerWidth * r), 1 / (innerHeight * r)); } };
+  sizeFxaa();
   const U = film.uniforms;
 
   const sp = new THREE.Vector3(), ndc = new THREE.Vector3();
@@ -76,7 +82,8 @@ export function createPipeline(renderer, scene, camera, sun, { mobile }) {
     bc: { set contrast(v) { U.contrast.value = v; }, set brightness(v) { U.brightness.value = v; } },
     hs: { set saturation(v) { U.saturation.value = v; } },
     godRays: { blendMode: { opacity: U.rays } },
-    setSize(w, h) { composer.setSize(w, h); ub.resolution.set(w / 2, h / 2); },
+    setSize(w, h) { composer.setSize(w, h); ub.resolution.set(w / 2, h / 2); sizeFxaa(); },
+    setPixelRatio(r) { composer.setPixelRatio(r); sizeFxaa(); },
     render(dt) {
       U.time.value += dt;
       // where is the sun on screen, and is it in front of us?

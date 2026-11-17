@@ -4,8 +4,8 @@
    ========================================================================== */
 import * as THREE from 'three';
 import { buildWorld, ST, shurikenMesh } from './world.js?v=13';
-import { createPipeline, loadHDRI, createAtmosphere, blendLook } from './cinema.js?v=12';
-import { loadCast, Character, manager } from './characters.js?v=9';
+import { createPipeline, loadHDRI, createAtmosphere, blendLook } from './cinema.js?v=13';
+import { loadCast, Character, manager, TEMPO } from './characters.js?v=10';
 
 gsap.registerPlugin(ScrollTrigger);
 const $ = (s, r = document) => r.querySelector(s), $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -23,7 +23,10 @@ const smooth = t => t * t * (3 - 2 * t);
 /* ---------- renderer ---------- */
 const canvas = $('#world');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, stencil: false, powerPreference: 'high-performance' });
-renderer.setPixelRatio(Math.min(devicePixelRatio, mobile ? 1.25 : 1.75));
+// resolution adapts to the device: it starts sharp and steps down if the frame rate drops (see perf())
+const PR = { max: Math.min(devicePixelRatio, mobile ? 1.6 : 1.75), min: Math.min(devicePixelRatio, mobile ? .8 : 1) };
+let pr = Math.min(PR.max, mobile ? 1.35 : 1.75);
+renderer.setPixelRatio(pr);
 renderer.setSize(innerWidth, innerHeight);
 renderer.shadowMap.enabled = !mobile;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -96,6 +99,10 @@ const duelSam = mk('samurai', 'duel'), duelNin = mk('ninja', 'duel');
 duelSam.root.rotation.y = Math.PI / 2; duelNin.root.rotation.y = -Math.PI / 2;
 duelSam.play('idle'); duelNin.play('crouch');
 
+// contact shadows: the hero ninjas and rooftop runner spend most of their time airborne
+all.forEach(c => { c.shadowStrength = mobile ? .62 : .4; });
+heroN.forEach(n => { n.shadow.visible = false; });
+
 const cfg = (c, k, d) => (cast[c.kind]?.def?.timing?.[k] ?? d);
 
 // a fighter running drills: holds a ready stance, then performs a random technique and settles back
@@ -117,13 +124,13 @@ function drills(c, stance, moves, { rest = [1.4, 2.6], onMove } = {}) {
       if (!pool.length) { wait = nextWait(); return; }
       const name = last = pool[Math.floor(Math.random() * pool.length)];
       const a = c.play(name, { loop: false, fade: .3, restart: true });
-      move = { name, t: 0, max: a ? a.getClip().duration + .4 : 2 };
+      move = { name, t: 0, max: a ? a.getClip().duration / a.timeScale + .4 : 2 };
       onMove && onMove(name);
     }
   };
 }
-const ninDrill = drills(trainNin, 'idle', ['kick', 'flipkick', 'hurricane'], { rest: [1.2, 2.4], onMove: () => setTimeout(() => sfx.whoosh(.16), 380) });
-const samDrill = drills(dojoSam, 'ready', ['combo', 'power'], { rest: [1.3, 2.4], onMove: n => [.42, n === 'combo' ? 1.3 : null, n === 'combo' ? 2.2 : null].forEach(t => t && setTimeout(() => sfx.slash(.16), t * 1000)) });
+const ninDrill = drills(trainNin, 'idle', ['kick', 'flipkick', 'hurricane'], { rest: [2.2, 3.6], onMove: () => setTimeout(() => sfx.whoosh(.16), 380 / TEMPO) });
+const samDrill = drills(dojoSam, 'ready', ['combo', 'power'], { rest: [2.2, 3.4], onMove: n => [.42, n === 'combo' ? 1.3 : null, n === 'combo' ? 2.2 : null].forEach(t => t && setTimeout(() => sfx.slash(.16), t * 1000 / TEMPO)) });
 let samPhase = 'sit';
 
 /* ---------- fx: sparks + flying shuriken ---------- */
@@ -154,7 +161,7 @@ const stars = [];
 function launchStar(from, target, card) {
   const m = shurikenMesh(); m.position.copy(from); scene.add(m);
   const to = target.center.clone().add(V((Math.random() - .5) * .3, (Math.random() - .5) * .3, 0));
-  stars.push({ m, from: from.clone(), to, t: 0, dur: .42, target, card });
+  stars.push({ m, from: from.clone(), to, t: 0, dur: .5, target, card });
 }
 function updateStars(dt) {
   for (let i = stars.length - 1; i >= 0; i--) {
@@ -170,6 +177,48 @@ function updateStars(dt) {
       if (s.card) { s.card.classList.add('hit', 'impact'); setTimeout(() => s.card.classList.remove('impact'), 700); }
     }
   }
+}
+
+/* ---------- sword trails: a faint arc of light that only shows when the blade really moves ---------- */
+const TRAIL_N = 18;
+const trailMat = new THREE.ShaderMaterial({
+  uniforms: { color: { value: new THREE.Color('#ffe2c0') } },
+  vertexShader: 'attribute float alpha; varying float vA; void main(){ vA = alpha; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+  fragmentShader: 'uniform vec3 color; varying float vA; void main(){ gl_FragColor = vec4(color * vA, vA); }',
+  transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide
+});
+function swordTrail(c) {
+  const pos = new Float32Array(TRAIL_N * 2 * 3), alpha = new Float32Array(TRAIL_N * 2), idx = [];
+  for (let i = 0; i < TRAIL_N - 1; i++) { const a = i * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.setAttribute('alpha', new THREE.BufferAttribute(alpha, 1)); geo.setIndex(idx);
+  const mesh = new THREE.Mesh(geo, trailMat); mesh.frustumCulled = false; mesh.visible = false; scene.add(mesh);
+  const base = V(0, 0, 0), tip = V(0, 0, 0), prev = V(0, 0, 0);
+  let fresh = true, glow = 0;
+  return function update(dt) {
+    if (!c.root.visible || !c.bladeEnds(base, tip)) { mesh.visible = false; fresh = true; glow = 0; return; }
+    if (fresh) { for (let i = 0; i < TRAIL_N; i++) { pos.set([base.x, base.y, base.z], i * 6); pos.set([tip.x, tip.y, tip.z], i * 6 + 3); } prev.copy(tip); fresh = false; }
+    const speed = tip.distanceTo(prev) / Math.max(dt, 1e-3); prev.copy(tip);
+    glow = lerp(glow, smooth(range(speed, 3.5, 9)), 1 - Math.exp(-dt * 14));
+    pos.copyWithin(6, 0, (TRAIL_N - 1) * 6);
+    pos.set([base.x, base.y, base.z], 0); pos.set([tip.x, tip.y, tip.z], 3);
+    for (let i = 0; i < TRAIL_N; i++) { const f = Math.pow(1 - i / (TRAIL_N - 1), 1.6) * glow * .55; alpha[i * 2] = f * .08; alpha[i * 2 + 1] = f; }
+    geo.attributes.position.needsUpdate = true; geo.attributes.alpha.needsUpdate = true;
+    mesh.visible = glow > .01;
+  };
+}
+const trails = [heroSam, dojoSam, duelSam, duelNin].map(swordTrail);
+
+/* ---------- adaptive resolution: hold a smooth frame rate on phones and older laptops ---------- */
+let perfT = 0, perfN = 0, perfGood = 0;
+function setPR(v) { pr = Math.round(v * 100) / 100; renderer.setPixelRatio(pr); pipe.setPixelRatio(pr); }
+function perf(rawDt) {
+  if (document.hidden || rawDt > .25 || introK < 1) return;      // ignore hitches, background tabs and the opening shot's loading
+  perfT += rawDt; perfN++;
+  if (perfT < 1.5) return;
+  const fps = perfN / perfT; perfT = perfN = 0;
+  if (fps < 44 && pr > PR.min) { setPR(Math.max(PR.min, pr - .15)); perfGood = 0; }
+  else if (fps > 57 && pr < PR.max && ++perfGood >= 3) { setPR(Math.min(PR.max, pr + .1)); perfGood = 0; }
 }
 
 /* ---------- sections + scroll ---------- */
@@ -295,7 +344,7 @@ function frameCamera(dt) {
 }
 
 /* ---------- station choreography ---------- */
-const W = A.hero.wall, NSPEED = 8.5, travel = (W.to - W.from) / NSPEED, DEL = [0, .6], PERIOD = travel + DEL[1] + 2.2;
+const W = A.hero.wall, NSPEED = 6.4, travel = (W.to - W.from) / NSPEED, DEL = [0, .8], PERIOD = travel + DEL[1] + 3;
 let nClock = 1.5, nDir = 1, drawState = 0, glintIn = 6;
 
 const stations = {
@@ -314,7 +363,7 @@ const stations = {
         y += Math.sin(Math.PI * u) * 2.4;
         if (n.has('flip')) n.scrub('flip', nDir > 0 ? u : 1 - u, .1); else n.play('run');
         if (!n._air) { n._air = true; sfx.whoosh(.1); }
-      } else { n._air = false; n.play('run', { speed: 1.15, fade: .15 }); }
+      } else { n._air = false; n.play('run', { speed: .88, fade: .15 }); }
       n.root.position.set(ST.hero.x + xr, y, W.z);
       n.root.rotation.y = nDir > 0 ? Math.PI / 2 : -Math.PI / 2;
     });
@@ -349,11 +398,11 @@ const stations = {
   },
 
   arsenal(dt) {
-    if (!throwing && throwQ.length) { ninDrill.cancel(); throwing = { ...throwQ.shift(), t: 0, fired: false }; trainNin.play('throw', { loop: false, fade: .15, restart: true, speed: 1.25 }); }
+    if (!throwing && throwQ.length) { ninDrill.cancel(); throwing = { ...throwQ.shift(), t: 0, fired: false }; trainNin.play('throw', { loop: false, fade: .15, restart: true, speed: 1.15 }); }
     if (!throwing) { ninDrill.update(dt); return; }
     if (throwing) {
       throwing.t += dt;
-      const a = trainNin.current, d = a ? a.getClip().duration / 1.25 : .8;
+      const a = trainNin.current, d = a ? a.getClip().duration / a.timeScale : .8;
       const fr = trainNin.has('throw') ? a.time / a.getClip().duration : throwing.t / .8;
       if (!throwing.fired && fr > cfg(trainNin, 'throwAt', .42)) {
         throwing.fired = true; sfx.whoosh(.3);
@@ -386,6 +435,7 @@ const stations = {
         if (roofNin._d > 1.7) { roofNin._d = 0; sfx.step(.08); }
       } else roofNin.play('crouch', { fade: .45 });
     }
+    roofNin.shadow.visible = r.u < 0;
     p.set(wx, r.y, F.z);
   },
 
@@ -521,7 +571,7 @@ function frame(time, deltaMs) {
   });
   // horizontal campaign track
   if (!mobile) track.style.transform = `translate3d(${(-trackDist() * range(prog.work, .04, .96)).toFixed(1)}px,0,0)`;
-  updateSparks(dt); updateStars(dt);
+  updateSparks(dt); updateStars(dt); trails.forEach(t => t(dt)); perf(deltaMs / 1000);
   world.update(time, dt, camera, focus, curLook);
   grade(dt, time);
   pipe.render(dt);
@@ -713,4 +763,4 @@ gsap.to('.loader-line', { autoAlpha: 0, duration: .3 });
 gsap.to('.loader-enter', { autoAlpha: 1, y: 0, duration: .6, delay: .2 });
 $('.enter-sound').addEventListener('click', () => enter(true), { once: true });
 $('.enter-quiet').addEventListener('click', () => enter(false), { once: true });
-window.__app = { scene, camera, cast, all, prog, pipe, world, ranges: () => ranges };
+window.__app = { scene, camera, cast, all, prog, pipe, world, ranges: () => ranges, get pr() { return pr; } };

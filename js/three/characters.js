@@ -176,9 +176,32 @@ const LOOK = {
   samurai: { tint: '#e8dcd4', rim: '#ff8a4c', rimPow: 3.2, rimStrength: .55 },
   ninja:   { tint: '#b4aebc', rim: '#ff6a3e', rimPow: 3.2, rimStrength: .5 }
 };
+// motion-captured technique plays a touch slower than real time so visitors can read every move.
+// Locomotion is left alone: its speed is matched to how fast the character travels.
+export const TEMPO = .78;
+const LOCO = /^(run|walk|sneak)$/;
+
+// soft contact shadow under the feet (the only shadow on phones, where shadow maps are off)
+let shadowTex = null;
+function contactShadow() {
+  if (!shadowTex) {
+    const c = document.createElement('canvas'); c.width = c.height = 64;
+    const g = c.getContext('2d'), r = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+    r.addColorStop(0, 'rgba(0,0,0,1)'); r.addColorStop(.45, 'rgba(0,0,0,.55)'); r.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = r; g.fillRect(0, 0, 64, 64);
+    shadowTex = new THREE.CanvasTexture(c);
+  }
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: shadowTex, transparent: true, depthWrite: false, opacity: .5, color: '#000000', polygonOffset: true, polygonOffsetFactor: -2 }));
+  m.rotation.x = -Math.PI / 2; m.scale.set(.95, .8, 1); m.renderOrder = 1;
+  return m;
+}
+
 const FALLBACK = { stance: 'idle', draw: 'idle', walk: 'run', sneak: 'walk', crouch: 'idle', throw: 'idle', flip: 'run', kneel: 'idle', slash: 'idle', meditate: 'idle', fall: 'idle' };
 
+const _v = new THREE.Vector3();
 export class Character {
+  shadowStrength = .5;
+
   constructor(kind, asset, o = {}) {
     this.kind = kind; this.root = new THREE.Group(); this.actions = {}; this.current = null; this.t = Math.random() * 10;
     this.props = {};
@@ -196,6 +219,7 @@ export class Character {
       this.propCfg = asset.def.props || {};
     } else this._standIn();
     this._dress(o);
+    this.shadow = contactShadow(); this.shadow.position.y = .02; this.root.add(this.shadow);
   }
 
   _standIn() {
@@ -262,7 +286,8 @@ export class Character {
     this.state = name; this.speed = speed;
     if (!a) return null;
     a.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, loop ? Infinity : 1);
-    a.clampWhenFinished = !loop; a.timeScale = speed; a.paused = false;
+    this.tempo = LOCO.test(name) ? 1 : TEMPO;
+    a.clampWhenFinished = !loop; a.timeScale = speed * this.tempo; a.paused = false;
     if (this.current !== a || restart) {
       a.reset(); a.enabled = true; a.setEffectiveWeight(1); a.play();
       if (this.current && this.current !== a) this.current.crossFadeTo(a, fade, false);
@@ -279,7 +304,16 @@ export class Character {
     a.time = THREE.MathUtils.clamp(k, 0, .999) * a.getClip().duration;
   }
 
-  setSpeed(s) { this.speed = s; if (this.current) this.current.timeScale = s; }
+  setSpeed(s) { this.speed = s; if (this.current) this.current.timeScale = s * (this.tempo || 1); }
+
+  // the blade's two ends in world space (for the sword trail); null while sheathed
+  bladeEnds(base, tip) {
+    const holder = this.props.katana || this.props.blade, b = holder && holder.children[0].userData.blade;
+    if (!b || !holder.visible) return false;
+    const len = this.props.katana ? .74 : .55;
+    b.localToWorld(base.set(.002, len * .12, 0)); b.localToWorld(tip.set(.006, len, 0));
+    return true;
+  }
 
   bladeTip(v = new THREE.Vector3()) {
     const holder = this.props.katana || this.props.blade, b = holder && holder.children[0].userData.blade;
@@ -292,6 +326,14 @@ export class Character {
   update(dt) {
     this.t += dt;
     if (this.mixer) this.mixer.update(dt);
+    // keep the contact shadow under the hips, fading as the body leaves the ground
+    const hips = this.bones.Hips;
+    if (hips && this.shadow.visible) {
+      hips.getWorldPosition(_v); this.root.worldToLocal(_v);
+      this.shadow.position.x = _v.x; this.shadow.position.z = _v.z;
+      const lift = THREE.MathUtils.clamp((_v.y - 1.05) / .9, 0, 1);
+      this.shadow.material.opacity = this.shadowStrength * (1 - lift);
+    }
     if (this.standIn) {           // simple procedural motion for the stand-in
       const s = this.standIn, st = this.state || 'idle';
       const moving = /run|walk|sneak/.test(st), k = moving ? Math.sin(this.t * (st === 'run' ? 12 : 6) * (this.speed || 1)) : 0;

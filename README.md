@@ -49,6 +49,8 @@ Then open http://localhost:5173.
 - **Per-scene grades:** the colour blends as the camera flies between scenes, from sunset to dojo candlelight, golden bamboo, blue-hour rooftops, lantern dusk and a blood-red duel.
 - **Atmosphere:** drifting mist, embers, fireflies, wind-blown sakura petals, light shafts, and rain with a lightning strike on the final cut.
 - **Direction:** an opening crane shot, chapter title cards between scenes, bows before the duel, and a ninja roll when he lands on the rooftops.
+- **Pacing:** sword techniques and kicks play at 78% of real time so every move reads clearly, faint light trails follow fast blade strokes, and every fighter has a soft contact shadow.
+- **Phones:** the resolution adapts to hold the frame rate. Phones get FXAA in place of SMAA, half the sun-ray samples and no depth of field, and their glass panels use solid tint because live blur is too costly there.
 
 ## Credits
 - Characters and motion capture: [Mixamo](https://www.mixamo.com) (Kachujin G Rosales, Ninja), including Ninja Idle, MMA and flip kicks, Hurricane Kick and the Great Sword idle and slash sets.
