@@ -23,6 +23,7 @@ export const ST = {
   road:  new THREE.Vector3(420, 0, -40),
   duel:  new THREE.Vector3(520, 0, -170)
 };
+const WHITE = new THREE.Color('#ffffff');
 export const SUN_DIR = new THREE.Vector3(.2, .13, -1).normalize();
 
 /* ---------- materials: photoscanned CC0 surfaces from Poly Haven ---------- */
@@ -160,15 +161,72 @@ export function stoneLantern(parent, x, z, s = 1, y = 0) {
   return g;
 }
 
+/* ---------- sakura: organic trunks + blossom-card canopies ---------- */
+// every tree registers its blossom cards here; one instanced canopy is built at the end
+const blossomCards = [];
+function tube(g, pts, r0, r1, m) {
+  const curve = new THREE.CatmullRomCurve3(pts.map(p => new THREE.Vector3(...p)));
+  const seg = 10, rad = 6, geo = new THREE.TubeGeometry(curve, seg, r0, rad, false);
+  const pos = geo.attributes.position, c = new THREE.Vector3(), v = new THREE.Vector3();
+  for (let i = 0; i <= seg; i++) {                        // taper from r0 to r1 along the branch
+    curve.getPointAt(i / seg, c); const k = THREE.MathUtils.lerp(1, r1 / r0, i / seg);
+    for (let j = 0; j <= rad; j++) { const id = i * (rad + 1) + j; v.fromBufferAttribute(pos, id).sub(c).multiplyScalar(k).add(c); pos.setXYZ(id, v.x, v.y, v.z); }
+  }
+  geo.computeVertexNormals();
+  return add(g, new THREE.Mesh(geo, m));
+}
 export function sakura(parent, x, y, z, s = 1) {
   const g = group(parent, x, y, z, R(0, 6), s);
-  const bark = mat('bark', '#22140f');
-  const t = cyl(g, .16, .34, 3.2, 6, bark, 0, 1.5, 0); t.rotation.z = .12;
-  const b1 = cyl(g, .07, .15, 2.4, 5, bark, .75, 3.1, 0); b1.rotation.z = -.75;
-  const b2 = cyl(g, .07, .14, 2.1, 5, bark, -.6, 3.15, .2); b2.rotation.z = .85;
-  const bl = mat('blossom', '#f0a3b6', { emissive: new THREE.Color('#7a2a40'), emissiveIntensity: .45 });
-  for (let i = 0; i < 10; i++) add(g, new THREE.Mesh(new THREE.IcosahedronGeometry(R(.8, 1.5), 0), bl), R(-2.3, 2.3), R(3.3, 5), R(-1.5, 1.5));
+  const bark = mat('bark', '#2a1a16', { roughness: .92 });
+  const lean = R(-.45, .45);
+  tube(g, [[0, 0, 0], [lean * .3, 1.2, .1], [lean * .7, 2.4, -.08], [lean, 3.1, 0]], .3, .15, bark);
+  const tips = [[lean, 3.7, 0]];
+  const nb = 5 + Math.floor(rnd() * 2);
+  for (let b = 0; b < nb; b++) {
+    const a = b / nb * Math.PI * 2 + R(-.3, .3), len = R(1.6, 2.7), up = R(.5, 1.4), sy = R(2.3, 3.05);
+    const start = [lean * (sy / 3.1), sy, 0];
+    const end = [start[0] + Math.cos(a) * len, sy + up, Math.sin(a) * len];
+    tube(g, [start, [start[0] + Math.cos(a) * len * .5, sy + up * .7, Math.sin(a) * len * .5], end], .12, .035, bark);
+    tips.push(end);
+  }
+  g.updateWorldMatrix(true, false);
+  tips.forEach(tp => {
+    for (let i = 0; i < 24; i++) {
+      const v = new THREE.Vector3(tp[0] + R(-1.15, 1.15), tp[1] + R(-.55, .85), tp[2] + R(-1.15, 1.15));
+      g.localToWorld(v);
+      blossomCards.push({ p: v, s: R(.9, 1.55) * s, r: [R(0, 6), R(0, 6), R(0, 6)] });
+    }
+  });
   return g;
+}
+function blossomTexture() {
+  const c = document.createElement('canvas'); c.width = c.height = 256; const g = c.getContext('2d');
+  const pinks = ['#ffe3ea', '#f9bccb', '#f3a2b8', '#fff1f4', '#ea8ea8'];
+  for (let i = 0; i < 90; i++) {
+    const x = 128 + (Math.random() - .5) * 200, y = 128 + (Math.random() - .5) * 200, r = 7 + Math.random() * 12;
+    if (Math.hypot(x - 128, y - 128) > 112) continue;
+    g.fillStyle = pinks[i % pinks.length];
+    for (let k = 0; k < 5; k++) { const a = k * Math.PI * 2 / 5 + i; g.beginPath(); g.ellipse(x + Math.cos(a) * r * .5, y + Math.sin(a) * r * .5, r * .52, r * .34, a, 0, Math.PI * 2); g.fill(); }
+    g.fillStyle = '#b8466a'; g.beginPath(); g.arc(x, y, r * .17, 0, Math.PI * 2); g.fill();
+  }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
+  return t;
+}
+function buildBlossoms(parent) {
+  if (!blossomCards.length) return;
+  const m = new THREE.MeshStandardMaterial({ map: blossomTexture(), alphaTest: .4, side: THREE.DoubleSide, roughness: .8, emissive: new THREE.Color('#6a2236'), emissiveIntensity: .45 });
+  m.onBeforeCompile = sh => {
+    sh.uniforms.uTime = grassTime;
+    sh.vertexShader = 'uniform float uTime;\n' + sh.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
+      vec4 bwp = instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
+      transformed.x += sin(uTime * 1.1 + bwp.x * .4 + bwp.y) * .06;
+      transformed.y += cos(uTime * 1.4 + bwp.z * .5) * .04;`);
+  };
+  const im = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1), m, blossomCards.length);
+  const o = new THREE.Object3D();
+  blossomCards.forEach((c, i) => { o.position.copy(c.p); o.rotation.set(...c.r); o.scale.setScalar(c.s); o.updateMatrix(); im.setMatrixAt(i, o.matrix); });
+  im.frustumCulled = false;
+  parent.add(im);
 }
 
 function makiwara(parent, x, z, ry) {
@@ -197,50 +255,90 @@ export function shurikenMesh() {
 
 /* ---------- instanced vegetation ---------- */
 const grassTime = { value: 0 };
-function grassField(parent, cx, cz, w, d, n, color = '#2a1a14', hMin = .35, hMax = 1.1) {
-  const geo = new THREE.PlaneGeometry(.09, 1, 1, 4); geo.translate(0, .5, 0);
-  const pos = geo.attributes.position;
-  for (let i = 0; i < pos.count; i++) pos.setX(i, pos.getX(i) * (1 - pos.getY(i)));
-  const m = new THREE.MeshStandardMaterial({ color, side: THREE.DoubleSide, roughness: 1 });
+function grassField(parent, cx, cz, w, d, n, color = '#2a1a14', hMin = .35, hMax = 1.1, hole = null) {
+  n = Math.round(n * 1.8);
+  // fine curved blades: dark at the root, warm sunlit gold at the tip
+  const base = new THREE.Color(color).lerp(new THREE.Color('#1c1f10'), .5), tip = base.clone().lerp(new THREE.Color('#c4a25a'), .78);
+  const geo = new THREE.PlaneGeometry(.055, 1, 1, 5); geo.translate(0, .5, 0);
+  const pos = geo.attributes.position, col = [], c = new THREE.Color();
+  for (let i = 0; i < pos.count; i++) {
+    const y = pos.getY(i);
+    pos.setX(i, pos.getX(i) * (1 - y * .9)); pos.setZ(i, y * y * .22);
+    c.copy(base).lerp(tip, Math.pow(y, 1.3)); col.push(c.r, c.g, c.b);
+  }
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  geo.computeVertexNormals();
+  const m = new THREE.MeshStandardMaterial({ vertexColors: true, side: THREE.DoubleSide, roughness: .85 });
   m.onBeforeCompile = sh => {
     sh.uniforms.uTime = grassTime;
     sh.vertexShader = 'uniform float uTime;\n' + sh.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
       vec4 gwp = instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
-      float gs = sin(uTime * 1.6 + gwp.x * .35 + gwp.z * .21) * .32 + sin(uTime * 3.3 + gwp.x * 1.3) * .07;
+      float gs = sin(uTime * 1.6 + gwp.x * .35 + gwp.z * .21) * .3 + sin(uTime * 3.3 + gwp.x * 1.3) * .06;
       transformed.x += gs * position.y * position.y;
       transformed.z += gs * .4 * position.y * position.y;`);
   };
   const im = new THREE.InstancedMesh(geo, m, n);
-  const o = new THREE.Object3D();
+  const o = new THREE.Object3D(), tint = new THREE.Color();
   for (let i = 0; i < n; i++) {
     o.position.set(cx + R(-w / 2, w / 2), 0, cz + R(-d / 2, d / 2));
-    o.rotation.set(R(-.15, .15), R(0, Math.PI), 0);
-    o.scale.set(R(.7, 1.4), R(hMin, hMax), 1);
+    o.rotation.set(R(-.18, .18), R(0, Math.PI * 2), R(-.12, .12));
+    // a trampled clearing (e.g. the duel circle) keeps only short stubble
+    const inHole = hole && Math.hypot(o.position.x - hole.x, o.position.z - hole.z) < hole.r;
+    o.scale.set(R(.7, 1.3), R(hMin, hMax) * (inHole ? .22 : 1), 1);
     o.updateMatrix(); im.setMatrixAt(i, o.matrix);
+    tint.setHSL(R(-.02, .04), R(.0, .25), R(.38, .6)); im.setColorAt(i, tint.multiplyScalar(1.9));
   }
   im.receiveShadow = true; parent.add(im);
   return im;
 }
 
+function bambooTexture() {
+  const c = document.createElement('canvas'); c.width = 32; c.height = 256; const g = c.getContext('2d');
+  const gr = g.createLinearGradient(0, 0, 32, 0); gr.addColorStop(0, '#2c4a26'); gr.addColorStop(.45, '#6f8e4a'); gr.addColorStop(1, '#253f22');
+  g.fillStyle = gr; g.fillRect(0, 0, 32, 256);
+  for (let y = 0; y < 256; y += 64) { g.fillStyle = 'rgba(20,30,14,.85)'; g.fillRect(0, y, 32, 3); g.fillStyle = 'rgba(190,200,140,.35)'; g.fillRect(0, y + 3, 32, 2); }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.wrapT = THREE.RepeatWrapping; t.repeat.set(1, 6);
+  return t;
+}
+function leafTexture() {
+  const c = document.createElement('canvas'); c.width = c.height = 256; const g = c.getContext('2d');
+  for (let i = 0; i < 22; i++) {
+    const a = -Math.PI / 2 + (Math.random() - .5) * 2.6, L = 70 + Math.random() * 50, w = 7 + Math.random() * 5;
+    g.save(); g.translate(128, 70); g.rotate(a + Math.PI / 2);
+    g.fillStyle = ['#3d6a2c', '#4f7d34', '#2f5524', '#648f3e'][i % 4];
+    g.beginPath(); g.moveTo(0, 0); g.quadraticCurveTo(w, L * .45, 0, L); g.quadraticCurveTo(-w, L * .45, 0, 0); g.fill();
+    g.strokeStyle = 'rgba(20,40,14,.6)'; g.lineWidth = 1; g.beginPath(); g.moveTo(0, 2); g.lineTo(0, L - 4); g.stroke();
+    g.restore();
+  }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
 function bambooGrove(parent, cx, cz, rIn, rOut, n) {
-  const geo = new THREE.CylinderGeometry(.075, .095, 1, 6, 8); geo.translate(0, .5, 0);
-  const im = new THREE.InstancedMesh(geo, mat('bamboo', '#2c4728'), n);
-  const lgeo = new THREE.ConeGeometry(.9, 2.6, 5); lgeo.rotateX(Math.PI);
-  const leaves = new THREE.InstancedMesh(lgeo, mat('bambooLeaf', '#1d3320'), n);
-  const o = new THREE.Object3D(), data = [];
+  const geo = new THREE.CylinderGeometry(.075, .095, 1, 8, 1); geo.translate(0, .5, 0);
+  const im = new THREE.InstancedMesh(geo, new THREE.MeshStandardMaterial({ map: bambooTexture(), roughness: .55 }), n);
+  const CL = 4;                                            // leaf clusters per stalk (each a crossed pair)
+  const leaves = new THREE.InstancedMesh(new THREE.PlaneGeometry(2.6, 2.6), new THREE.MeshStandardMaterial({ map: leafTexture(), alphaTest: .45, side: THREE.DoubleSide, roughness: .75 }), n * CL * 2);
+  const o = new THREE.Object3D(), data = [], v = new THREE.Vector3();
   for (let i = 0; i < n; i++) {
     const a = R(0, Math.PI * 2), r = R(rIn, rOut);
-    data.push({ x: cx + Math.cos(a) * r, z: cz + Math.sin(a) * r, h: R(8, 15), ph: R(0, 6), tx: R(-.05, .05), tz: R(-.05, .05) });
+    const cls = Array.from({ length: CL }, () => ({ f: R(.62, .98), dx: R(-.8, .8), dz: R(-.8, .8), ry: R(0, Math.PI), tilt: R(-.4, .4) }));
+    data.push({ x: cx + Math.cos(a) * r, z: cz + Math.sin(a) * r, h: R(8, 15), ph: R(0, 6), tx: R(-.05, .05), tz: R(-.05, .05), cls });
   }
   im.castShadow = true; parent.add(im); parent.add(leaves);
   function update(t) {
+    let k = 0;
     data.forEach((b, i) => {
       const sw = Math.sin(t * .9 + b.ph) * .035;
       o.position.set(b.x, 0, b.z); o.rotation.set(b.tx + sw * .5, 0, b.tz + sw); o.scale.set(1, b.h, 1);
       o.updateMatrix(); im.setMatrixAt(i, o.matrix);
-      const top = new THREE.Vector3(0, b.h * .92, 0).applyEuler(o.rotation);
-      o.position.set(b.x + top.x, top.y, b.z + top.z); o.scale.set(1, 1, 1);
-      o.updateMatrix(); leaves.setMatrixAt(i, o.matrix);
+      const rot = o.rotation.clone();
+      b.cls.forEach(c => {
+        v.set(0, b.h * c.f, 0).applyEuler(rot);
+        for (let x = 0; x < 2; x++) {
+          o.position.set(b.x + v.x + c.dx, v.y, b.z + v.z + c.dz);
+          o.rotation.set(c.tilt, c.ry + x * Math.PI / 2, rot.z); o.scale.set(1, 1, 1);
+          o.updateMatrix(); leaves.setMatrixAt(k++, o.matrix);
+        }
+      });
     });
     im.instanceMatrix.needsUpdate = true; leaves.instanceMatrix.needsUpdate = true;
   }
@@ -340,15 +438,23 @@ export function buildWorld(scene, { mobile = false } = {}) {
   const ground = new THREE.Mesh(gg, pbr('ground', 'aerial_grass_rock', '#6a5a50', { roughness: .95 }));
   ground.receiveShadow = true; world.add(ground);
 
-  // distant mountains (unfogged silhouettes)
-  const mm = [new THREE.MeshBasicMaterial({ color: '#2c1328', fog: false }), new THREE.MeshBasicMaterial({ color: '#1b0b19', fog: false })];
-  for (let i = 0; i < 26; i++) {
-    const a = -Math.PI * .95 + (i / 25) * Math.PI * .9 + R(-.04, .04), r = R(620, 760);
-    const h = R(70, 170);
-    const c = new THREE.Mesh(new THREE.ConeGeometry(R(90, 170), h, 7), mm[i % 2]);
-    c.position.set(260 + Math.cos(a) * r, h / 2 - 25, -80 + Math.sin(a) * r);
-    world.add(c);
-  }
+  // distant mountains: three ridgelines fading into haze with distance (atmospheric perspective)
+  const ridgeMats = [];
+  const vnoise = x => { const i = Math.floor(x), f = x - i, h = n => { const s = Math.sin(n * 127.1) * 43758.5453; return s - Math.floor(s); }; const u = f * f * (3 - 2 * f); return h(i) * (1 - u) + h(i + 1) * u; };
+  const fbm = x => { let v = 0, a = .5, f = 1; for (let o = 0; o < 5; o++) { v += a * (1 - Math.abs(vnoise(x * f) * 2 - 1)); a *= .5; f *= 2.1; } return v; };
+  [[720, 20, 55, '#1a0b18', '#5c2030', 3.1], [860, 35, 85, '#2a1328', '#73303a', 11.7], [1000, 55, 120, '#3c1d34', '#94463f', 23.3]].forEach(([rad, hb, ha, top, bot, seed]) => {
+    const N = 260, pos = [], col = [], idx = [], ct = new THREE.Color(top), cb = new THREE.Color(bot);
+    for (let i = 0; i <= N; i++) {
+      const a = -Math.PI * 1.02 + (Math.PI * 1.04) * i / N, h = hb + ha * Math.pow(fbm(i * .045 + seed), 1.6) * 1.5;
+      const x = 260 + Math.cos(a) * rad, z = -80 + Math.sin(a) * rad;
+      pos.push(x, -60, z, x, h, z); col.push(cb.r, cb.g, cb.b, ct.r, ct.g, ct.b);
+      if (i < N) { const k = i * 2; idx.push(k, k + 1, k + 2, k + 1, k + 3, k + 2); }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3)); geo.setIndex(idx);
+    const m = new THREE.MeshBasicMaterial({ vertexColors: true, fog: false, side: THREE.DoubleSide });
+    ridgeMats.push(m); world.add(new THREE.Mesh(geo, m));
+  });
   const fuji = new THREE.Mesh(new THREE.ConeGeometry(300, 260, 24, 1, true), new THREE.MeshBasicMaterial({ color: '#341a2e', fog: false }));
   fuji.position.set(160, 95, -820); world.add(fuji);
   // snowcap sits a few metres proud of the slope (a coincident surface flickers)
@@ -500,18 +606,20 @@ export function buildWorld(scene, { mobile = false } = {}) {
   {
     const Du = ST.duel, g = group(world, Du.x, 0, Du.z);
     torii(g, 0, -34, 2.3);
-    grassField(g, 0, -8, 70, 50, mobile ? 1600 : 4200, '#140708', .5, 1.4);
+    grassField(g, 0, -8, 70, 50, mobile ? 1600 : 4200, '#140708', .3, 1.0, { x: 0, z: 0, r: 7 });
     for (let i = 0; i < 6; i++) sakura(g, R(-30, 30), 0, R(-50, -22), R(1, 1.4));
     rocks(g, [[-9, -6, 1.8, .3], [11, -9, 2.2, 2.2], [-4, -18, 2.6, 1.4], [16, 2, 1.4, 5]]);
     anchors.duel = { y: 0, z: Du.z, x: Du.x };
   }
 
+  buildBlossoms(world);
   const petals = makePetals(scene, mobile ? 160 : 380);
   const lampMat = M.lamp();
 
   return {
     anchors, sky, sun, skyMat,
-    update(t, dt, cam, focus) {
+    update(t, dt, cam, focus, look) {
+      if (look) ridgeMats.forEach(m => m.color.copy(look.horizon).lerp(WHITE, .55));
       sky.position.copy(cam.position);
       grassTime.value = t;
       clouds.forEach((c, i) => { c.position.x += Math.sin(t * .05 + i) * .02; });

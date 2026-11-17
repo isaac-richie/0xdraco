@@ -3,9 +3,9 @@
    between stations, per-section choreography, UI, sound.
    ========================================================================== */
 import * as THREE from 'three';
-import { buildWorld, ST, shurikenMesh } from './world.js?v=7';
-import { createPipeline, loadHDRI, createAtmosphere, blendLook } from './cinema.js?v=7';
-import { loadCast, Character, manager } from './characters.js?v=7';
+import { buildWorld, ST, shurikenMesh } from './world.js?v=8';
+import { createPipeline, loadHDRI, createAtmosphere, blendLook } from './cinema.js?v=8';
+import { loadCast, Character, manager } from './characters.js?v=8';
 
 gsap.registerPlugin(ScrollTrigger);
 const $ = (s, r = document) => r.querySelector(s), $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -470,7 +470,7 @@ function frame(time, deltaMs) {
   // horizontal campaign track
   if (!mobile) track.style.transform = `translate3d(${(-trackDist() * range(prog.work, .04, .96)).toFixed(1)}px,0,0)`;
   updateSparks(dt); updateStars(dt);
-  world.update(time, dt, camera, focus);
+  world.update(time, dt, camera, focus, curLook);
   grade(dt, time);
   pipe.render(dt);
 
@@ -500,8 +500,9 @@ const FOCUS = {          // what the lens holds sharp, and how shallow the focus
   duel: () => [duelState.mid || duelSam.root.position, 1.2, 4.5, 2.8]
 };
 const fp = V(0, 0, 0), white = new THREE.Color('#ffffff');
+let curLook = null;
 function grade(dt, t) {
-  const L = blendLook(lookA, lookB, lookT);
+  const L = curLook = blendLook(lookA, lookB, lookT);
   const u = world.skyMat.uniforms;
   u.top.value.copy(L.top); u.mid.value.copy(L.mid); u.horizon.value.copy(L.horizon).lerp(white, lightning * .8); u.glowC.value.copy(L.glow);
   scene.fog.color.copy(L.fog).lerp(white, lightning * .5); scene.fog.density = L.fogD;
@@ -619,13 +620,17 @@ measure();
 ScrollTrigger.refresh();
 gsap.ticker.add(frame);
 
+// any click, scroll, swipe or key skips the opening crane shot
+let introTL = null;
+const skipIntro = e => { if (introK < 1 && introTL && !(e.target && e.target.closest && e.target.closest('#loader'))) introTL.progress(1); };
+['wheel', 'touchstart', 'keydown', 'pointerdown'].forEach(ev => addEventListener(ev, skipIntro, { passive: true }));
 function intro() {
   const o = { k: 0 };
   lenis && lenis.stop();
   introK = reduce ? 1 : 0;
   gsap.set(['.hero-title .line > span'], { yPercent: 115 });
   gsap.set(['.eyebrow', '.hero-role', '.hero .hero-cta', '.scroll-cue', '.nav'], { autoAlpha: 0 });
-  gsap.timeline()
+  introTL = gsap.timeline()
     .to(o, { k: 1, duration: reduce ? 0 : 6.2, ease: 'none', onUpdate: () => { introK = o.k; } })
     .add(() => sfx.drum(.5), 3.6)
     .to('.hero-title .line > span', { yPercent: 0, duration: 1.4, ease: 'expo.out', stagger: .14 }, 3.4)
