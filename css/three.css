@@ -103,3 +103,17 @@ body.three { background: #0b0610; color: var(--paper); }
 @media (prefers-reduced-motion: reduce) {
   .three .duel-cta { opacity: 1; visibility: visible; }
 }
+
+/* chapter title cards (shown while the camera flies between scenes) */
+.chapter {
+  position: fixed; inset: 0; z-index: 5; pointer-events: none; opacity: 0; visibility: hidden;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+  text-shadow: 0 8px 40px rgba(0, 0, 0, .6);
+}
+.ch-kanji { font-family: var(--f-brush); font-size: clamp(110px, 16vw, 220px); line-height: .9; color: var(--shu-2); }
+.ch-rule { width: min(320px, 60vw); height: 1px; background: linear-gradient(90deg, transparent, rgba(239, 230, 211, .8), transparent); transform-origin: center; }
+.ch-num { font-family: var(--f-mono); font-size: 12px; letter-spacing: .4em; text-transform: uppercase; color: rgba(239, 230, 211, .75); }
+.ch-title { font-family: var(--f-display); font-weight: 800; font-size: clamp(30px, 4vw, 56px); letter-spacing: .04em; color: var(--paper); }
+/* the WebGL grain/vignette now come from the film pipeline */
+.three .grain { opacity: .03; }
+.vignette { background: radial-gradient(ellipse at 50% 55%, transparent 55%, rgba(5, 2, 6, .45) 100%); }

@@ -113,8 +113,9 @@ function stylize(model, o) {
     m.castShadow = true; m.receiveShadow = false; m.frustumCulled = false;
     const list = Array.isArray(m.material) ? m.material : [m.material];
     const out = list.map(src => {
-      const n = new THREE.MeshStandardMaterial({ color: new THREE.Color(o.tint), map: src.map || null, roughness: .72, metalness: .05 });
+      const n = new THREE.MeshStandardMaterial({ color: new THREE.Color(o.tint), map: src.map || null, normalMap: src.normalMap || null, roughness: .62, metalness: .04, envMapIntensity: 1.1 });
       if (n.map) n.map.colorSpace = THREE.SRGBColorSpace;
+      if (n.normalMap) n.normalScale.set(1, 1);
       return addRim(n, o.rim, o.rimPow, o.rimStrength);
     });
     m.material = Array.isArray(m.material) ? out : out[0];
@@ -122,7 +123,7 @@ function stylize(model, o) {
 }
 
 /* ---------- props (built in metres) ---------- */
-const steel = addRim(new THREE.MeshStandardMaterial({ color: '#d7dbe0', metalness: .45, roughness: .22, emissive: new THREE.Color('#ffffff'), emissiveIntensity: .05 }), '#ffd2a0', 1.6, 1.2);
+const steel = addRim(new THREE.MeshStandardMaterial({ color: '#e4e8ee', metalness: .92, roughness: .16, envMapIntensity: 1.6, emissive: new THREE.Color('#ffffff'), emissiveIntensity: 0 }), '#ffd2a0', 2.4, .5);
 const lacquer = new THREE.MeshStandardMaterial({ color: '#120c0c', roughness: .45, metalness: .2 });
 const goldM = new THREE.MeshStandardMaterial({ color: '#d6ad55', metalness: .8, roughness: .3, emissive: new THREE.Color('#5a3a10'), emissiveIntensity: .6 });
 const redM = new THREE.MeshStandardMaterial({ color: '#c8321f', roughness: .7, emissive: new THREE.Color('#5a0e06'), emissiveIntensity: .5, side: THREE.DoubleSide });
@@ -172,8 +173,8 @@ function headband() {
 
 /* ---------- Character ---------- */
 const LOOK = {
-  samurai: { tint: '#a39a94', rim: '#ff7a3c', rimPow: 2.2, rimStrength: 1.3 },
-  ninja:   { tint: '#7a7680', rim: '#ff5a2e', rimPow: 2.4, rimStrength: 1.2 }
+  samurai: { tint: '#e8dcd4', rim: '#ff8a4c', rimPow: 3.2, rimStrength: .55 },
+  ninja:   { tint: '#b4aebc', rim: '#ff6a3e', rimPow: 3.2, rimStrength: .5 }
 };
 const FALLBACK = { stance: 'idle', draw: 'idle', walk: 'run', sneak: 'walk', crouch: 'idle', throw: 'idle', flip: 'run', kneel: 'idle', slash: 'idle', meditate: 'idle', fall: 'idle' };
 
@@ -251,7 +252,7 @@ export class Character {
   glint() {
     const b = (this.props.katana || this.props.blade)?.children[0]?.userData.blade; if (!b) return;
     const o = { k: 0 };
-    if (window.gsap) gsap.fromTo(o, { k: 0 }, { k: 1, duration: .6, ease: 'power2.inOut', onUpdate: () => { b.material.emissiveIntensity = .05 + Math.sin(o.k * Math.PI) * 1.6; } });
+    if (window.gsap) gsap.fromTo(o, { k: 0 }, { k: 1, duration: .6, ease: 'power2.inOut', onUpdate: () => { b.material.emissiveIntensity = Math.sin(o.k * Math.PI) * 1.8; } });
   }
 
   has(name) { return !!this.actions[name]; }

@@ -9,6 +9,7 @@
      duel   open grass field under a giant torii at sunset
    ========================================================================== */
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 let seed = 20261116;
 export function rnd() { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; }
@@ -24,39 +25,64 @@ export const ST = {
 };
 export const SUN_DIR = new THREE.Vector3(.2, .13, -1).normalize();
 
-/* ---------- materials ---------- */
+/* ---------- materials: photoscanned CC0 surfaces from Poly Haven ---------- */
 const mats = {};
+const texLoader = new THREE.TextureLoader();
+const TEX = 'assets/env/tex/';
+function tex(name, kind) {
+  const t = texLoader.load(`${TEX}${name}_${kind}.jpg`);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8;
+  if (kind === 'diff') t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+function pbr(key, name, tint, o = {}) {
+  return mats[key] || (mats[key] = new THREE.MeshStandardMaterial({ map: tex(name, 'diff'), normalMap: tex(name, 'nor'), color: tint, roughness: .88, metalness: 0, ...o }));
+}
 function mat(key, color, o = {}) {
-  return mats[key] || (mats[key] = new THREE.MeshStandardMaterial({ color, roughness: .9, metalness: 0, flatShading: true, ...o }));
+  return mats[key] || (mats[key] = new THREE.MeshStandardMaterial({ color, roughness: .9, metalness: 0, ...o }));
 }
 function glow(key, color, intensity = 2.5) {
   return mats[key] || (mats[key] = new THREE.MeshStandardMaterial({ color, emissive: new THREE.Color(color), emissiveIntensity: intensity, roughness: 1 }));
 }
 const M = {
-  roof: () => mat('roof', '#16101a'),
-  wall: () => mat('wall', '#2c1e1a'),
-  plaster: () => mat('plaster', '#8a7b70'),
-  wood: () => mat('wood', '#5a3620'),
-  woodDark: () => mat('woodDark', '#24150c'),
-  stone: () => mat('stone', '#4f4852'),
-  rock: () => mat('rock', '#1f1519'),
-  red: () => mat('torii', '#b5271a', { flatShading: false, roughness: .55 }),
-  black: () => mat('black', '#120c0c'),
-  gold: () => mat('gold', '#c9a14a', { metalness: .7, roughness: .35, flatShading: false }),
-  window: () => glow('window', '#ff9c4a', 1.8),
-  lamp: () => glow('lamp', '#ffb063', 3.2)
+  roof: () => pbr('roof', 'clay_roof_tiles_02', '#4e4a58', { normalScale: new THREE.Vector2(1.3, 1.3), roughness: .7 }),
+  wall: () => pbr('wall', 'black_painted_planks', '#8a7468'),
+  plaster: () => pbr('plaster', 'clay_plaster', '#efe4d2'),
+  wood: () => pbr('wood', 'brown_planks_07', '#d6a878', { roughness: .7 }),
+  woodDark: () => pbr('woodDark', 'black_painted_planks', '#4a3428'),
+  stone: () => pbr('stone', 'castle_wall_slates', '#a89c98'),
+  rock: () => pbr('rock', 'castle_wall_slates', '#6a5a58', { normalScale: new THREE.Vector2(1.6, 1.6) }),
+  red: () => pbr('torii', 'clay_plaster', '#d0321c', { roughness: .55 }),
+  black: () => mat('black', '#120c0c', { roughness: .5 }),
+  gold: () => mat('gold', '#c9a14a', { metalness: .8, roughness: .3 }),
+  window: () => glow('window', '#ff9c4a', 2.2),
+  lamp: () => glow('lamp', '#ffb063', 3.6)
 };
+
+// scale a geometry's UVs to real-world metres so textures tile at a constant size
+const TILE = 1.6;
+function boxUV(geo, w, h, d) {
+  const uv = geo.attributes.uv, n = geo.attributes.normal;
+  for (let i = 0; i < uv.count; i++) {
+    const nx = Math.abs(n.getX(i)), ny = Math.abs(n.getY(i));
+    const [a, b] = nx > .5 ? [d, h] : ny > .5 ? [w, d] : [w, h];
+    uv.setXY(i, uv.getX(i) * a / TILE, uv.getY(i) * b / TILE);
+  }
+  return geo;
+}
+function scaleUV(geo, su, sv) { const uv = geo.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * su, uv.getY(i) * sv); return geo; }
 
 /* ---------- primitives ---------- */
 function add(parent, mesh, x = 0, y = 0, z = 0) { mesh.position.set(x, y, z); mesh.castShadow = mesh.receiveShadow = true; parent.add(mesh); return mesh; }
-const box = (p, w, h, d, m, x, y, z) => add(p, new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m), x, y, z);
-const cyl = (p, rt, rb, h, s, m, x, y, z) => add(p, new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, s), m), x, y, z);
+const box = (p, w, h, d, m, x, y, z) => add(p, new THREE.Mesh(boxUV(new THREE.BoxGeometry(w, h, d), w, h, d), m), x, y, z);
+const cyl = (p, rt, rb, h, s, m, x, y, z) => add(p, new THREE.Mesh(scaleUV(new THREE.CylinderGeometry(rt, rb, h, s), Math.PI * (rt + rb) / TILE, h / TILE), m), x, y, z);
 function group(parent, x = 0, y = 0, z = 0, ry = 0, s = 1) { const g = new THREE.Group(); g.position.set(x, y, z); g.rotation.y = ry; g.scale.setScalar(s); parent.add(g); return g; }
 
 // hip roof (pagoda / keep tiers)
 function hipRoof(p, w, d, h, y) {
   const geo = new THREE.CylinderGeometry(.06, .7071, 1, 4, 1); geo.rotateY(Math.PI / 4);
-  const r = add(p, new THREE.Mesh(geo, M.roof()), 0, y + h / 2, 0); r.scale.set(w, h, d);
+  scaleUV(geo, 2 * (w + d) / TILE, Math.hypot(h, Math.max(w, d) / 2) / TILE); geo.scale(w, h, d);
+  add(p, new THREE.Mesh(geo, M.roof()), 0, y + h / 2, 0);
   box(p, w * 1.04, .16, d * 1.04, M.roof(), 0, y + .06, 0);
   [[1, 1], [1, -1], [-1, 1], [-1, -1]].forEach(([sx, sz]) => {
     const t = box(p, 1.1, .14, .3, M.roof(), sx * w * .52, y + .28, sz * d * .52);
@@ -66,7 +92,7 @@ function hipRoof(p, w, d, h, y) {
 // gable roof with a long ridge along x — runnable
 function gableRoof(p, w, d, h, y) {
   const s = new THREE.Shape(); s.moveTo(-d / 2 - .4, 0); s.lineTo(d / 2 + .4, 0); s.lineTo(0, h); s.closePath();
-  const geo = new THREE.ExtrudeGeometry(s, { depth: w * 1.08, bevelEnabled: false }); geo.translate(0, 0, -w * .54); geo.rotateY(Math.PI / 2);
+  const geo = new THREE.ExtrudeGeometry(s, { depth: w * 1.08, bevelEnabled: false }); scaleUV(geo, 1 / TILE, 1 / TILE); geo.translate(0, 0, -w * .54); geo.rotateY(Math.PI / 2);
   add(p, new THREE.Mesh(geo, M.roof()), 0, y, 0);
   box(p, w * 1.12, .22, .34, M.black(), 0, y + h + .04, 0);
   return y + h + .15;
@@ -245,7 +271,7 @@ function makeSky(scene) {
   });
   sky.add(new THREE.Mesh(new THREE.SphereGeometry(950, 32, 16), m));
 
-  const sun = new THREE.Mesh(new THREE.CircleGeometry(80, 64), new THREE.MeshBasicMaterial({ color: new THREE.Color('#ff4d24').multiplyScalar(1.6), fog: false, toneMapped: false }));
+  const sun = new THREE.Mesh(new THREE.CircleGeometry(80, 64), new THREE.MeshBasicMaterial({ color: new THREE.Color('#ff5a2a').multiplyScalar(1.8), fog: false, toneMapped: false, transparent: true, depthWrite: false }));
   sun.position.copy(SUN_DIR).multiplyScalar(820); sun.lookAt(0, 0, 0); sky.add(sun);
 
   // ink cloud bands across the sun
@@ -265,7 +291,7 @@ function makeSky(scene) {
   sky.add(new THREE.Points(sg, new THREE.PointsMaterial({ color: '#f3e9d6', size: 1.8, sizeAttenuation: false, fog: false, transparent: true, opacity: .8 })));
 
   scene.add(sky);
-  return { sky, clouds, sun };
+  return { sky, clouds, sun, skyMat: m };
 }
 
 /* ---------- petals around the camera ---------- */
@@ -296,7 +322,7 @@ function makePetals(scene, n) {
    ====================================================================== */
 export function buildWorld(scene, { mobile = false } = {}) {
   scene.fog = new THREE.FogExp2('#3a1526', .0105);
-  const { sky, clouds } = makeSky(scene);
+  const { sky, clouds, sun, skyMat } = makeSky(scene);
   const world = new THREE.Group(); scene.add(world);
 
   // ground
@@ -310,8 +336,8 @@ export function buildWorld(scene, { mobile = false } = {}) {
     gp.setY(i, (Math.sin(x * .021) * Math.cos(z * .017) * 3 + Math.sin(x * .05 + z * .03)) * amp - .02);
   }
   gg.translate(260, 0, -80);
-  gg.computeVertexNormals();
-  const ground = new THREE.Mesh(gg, mat('ground', '#1d1013', { flatShading: false }));
+  gg.computeVertexNormals(); scaleUV(gg, 1800 / 7, 1400 / 7);
+  const ground = new THREE.Mesh(gg, pbr('ground', 'aerial_grass_rock', '#6a5a50', { roughness: .95 }));
   ground.receiveShadow = true; world.add(ground);
 
   // distant mountains (unfogged silhouettes)
@@ -329,6 +355,22 @@ export function buildWorld(scene, { mobile = false } = {}) {
   cap.position.set(160, 191, -820); world.add(cap);
 
   const anchors = {};
+
+  // background-loaded CC0 props; each call clones the cached model
+  const gl = new GLTFLoader(), propCache = {};
+  function prop(name, parent, pos, ry = 0, scale = 1, tweak) {
+    const p = propCache[name] || (propCache[name] = new Promise(res => gl.load(`assets/env/models/${name}/${name}.gltf`, g => {
+      g.scene.traverse(o => { if (o.isMesh) { o.castShadow = o.receiveShadow = true; if (o.material.map) o.material.map.anisotropy = 8; } });
+      res(g.scene);
+    }, undefined, () => res(null))));
+    p.then(src => {
+      if (!src) return;
+      const o = src.clone(); o.position.set(...pos); o.rotation.y = ry; o.scale.setScalar(scale);
+      if (tweak) tweak(o);
+      parent.add(o);
+    });
+  }
+  const rocks = (parent, list) => list.forEach(([x, z, s, ry, y = 0]) => prop('rock_moss_set_01', parent, [x, y, z], ry, s));
 
   /* --- 序 hero: cliff, castle wall for the ninjas, castle town --- */
   {
@@ -349,6 +391,7 @@ export function buildWorld(scene, { mobile = false } = {}) {
       gableRoof(seg, b - a, 2.6, 1.3, WH);
       for (let x = a + 6; x < b - 3; x += 12) box(seg, .7, .5, .05, M.window(), x - (a + b) / 2, WH * .5, 1.24);
     });
+    rocks(g, [[3.5, -2.5, .9, .2, 6], [-3.8, 1.5, .7, 2, 6], [-1, -4.5, .6, 4, 6]]);
     anchors.hero = { samurai: new THREE.Vector3(H.x, 6, H.z), wall: { z: H.z + WZ, y: WH + 1.45, gap: [-6, 6], from: -80, to: 80 } };
 
     castleKeep(g, -38, -110, 1.2);
@@ -375,11 +418,10 @@ export function buildWorld(scene, { mobile = false } = {}) {
     };
     wall(16, 0, -7, 0); wall(14, -8, 0, Math.PI / 2); wall(14, 8, 0, Math.PI / 2);
     const light = new THREE.PointLight('#ffb064', 40, 22, 2); light.position.set(0, 3, -1); g.add(light);
-    [-5, 5].forEach(x => { box(g, .45, .7, .45, M.lamp(), x, .9, -4.5); box(g, .55, .08, .55, M.woodDark(), x, 1.28, -4.5); });
-    // katana on its stand
-    const ks = group(g, 0, .5, 1.6);
-    box(ks, .08, .45, .3, M.woodDark(), -.5, .22, 0); box(ks, .08, .45, .3, M.woodDark(), .5, .22, 0);
-    box(ks, 1.5, .04, .04, M.black(), 0, .4, 0); box(ks, .3, .04, .04, mat('tsuka', '#3a2a22'), -.85, .4, 0);
+    [-6.6, 6.6].forEach(x => { box(g, .45, .7, .45, M.lamp(), x, .9, -6); box(g, .55, .08, .55, M.woodDark(), x, 1.28, -6); });
+    // photoscanned katana stand + antique katana (Poly Haven, CC0), loaded in the background
+    prop('katana_stand_01', g, [0, .5, 1.9], Math.PI, 1);
+    prop('antique_katana_01', g, [0, .52, .55], Math.PI / 2, 1, o => { o.rotation.z = Math.PI / 2; o.rotation.x = Math.PI / 2; });
     for (let i = 0; i < 6; i++) sakura(world, D.x + R(-22, 22), 0, D.z + R(-22, -12), R(.8, 1.1));
     for (let i = 0; i < 4; i++) stoneLantern(world, D.x + (i < 2 ? -11 : 11), D.z + 9 + (i % 2) * 5, 1);
     anchors.dojo = { samurai: new THREE.Vector3(D.x, .5, D.z - 1.4), sneak: { z: D.z - 9.6, from: D.x - 14, to: D.x + 14 }, light, paper };
@@ -399,6 +441,7 @@ export function buildWorld(scene, { mobile = false } = {}) {
       targets.push({ group: t, center: new THREE.Vector3(T.x + x - .05, 1.75, T.z + z) });
     }
     for (let i = 0; i < 4; i++) stoneLantern(g, R(-12, 4), i < 2 ? -9 : 7, 1);
+    rocks(g, [[-9.5, -3.5, 1.4, .4], [-12, 3, 1.1, 2], [2.5, -9, 1.6, 1], [-4, 7.5, 1.2, 4], [6, 4, .9, 3]]);
     anchors.train = { ninja: new THREE.Vector3(T.x - 9.5, 1.95, T.z), targets };
   }
 
@@ -428,7 +471,7 @@ export function buildWorld(scene, { mobile = false } = {}) {
       at(wx) {
         for (let i = 0; i < segs.length; i++) {
           const s = segs[i];
-          if (wx >= s.a && wx <= s.b) return { y: s.y, u: -1 };
+          if (wx >= s.a && wx <= s.b) return { y: s.y, u: -1, into: wx - s.a, outOf: s.b - wx };
           const n = segs[i + 1];
           if (n && wx > s.b && wx < n.a) {
             const u = (wx - s.b) / (n.a - s.b);
@@ -458,6 +501,7 @@ export function buildWorld(scene, { mobile = false } = {}) {
     torii(g, 0, -34, 2.3);
     grassField(g, 0, -8, 70, 50, mobile ? 1600 : 4200, '#140708', .5, 1.4);
     for (let i = 0; i < 6; i++) sakura(g, R(-30, 30), 0, R(-50, -22), R(1, 1.4));
+    rocks(g, [[-9, -6, 1.8, .3], [11, -9, 2.2, 2.2], [-4, -18, 2.6, 1.4], [16, 2, 1.4, 5]]);
     anchors.duel = { y: 0, z: Du.z, x: Du.x };
   }
 
@@ -465,7 +509,7 @@ export function buildWorld(scene, { mobile = false } = {}) {
   const lampMat = M.lamp();
 
   return {
-    anchors, sky,
+    anchors, sky, sun, skyMat,
     update(t, dt, cam, focus) {
       sky.position.copy(cam.position);
       grassTime.value = t;

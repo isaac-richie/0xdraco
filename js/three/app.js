@@ -3,12 +3,9 @@
    between stations, per-section choreography, UI, sound.
    ========================================================================== */
 import * as THREE from 'three';
-import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { buildWorld, ST, shurikenMesh } from './world.js';
-import { loadCast, Character, manager } from './characters.js';
+import { buildWorld, ST, shurikenMesh } from './world.js?v=6';
+import { createPipeline, loadHDRI, createAtmosphere, blendLook } from './cinema.js?v=6';
+import { loadCast, Character, manager } from './characters.js?v=6';
 
 gsap.registerPlugin(ScrollTrigger);
 const $ = (s, r = document) => r.querySelector(s), $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -25,11 +22,9 @@ const smooth = t => t * t * (3 - 2 * t);
 
 /* ---------- renderer ---------- */
 const canvas = $('#world');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: !mobile, powerPreference: 'high-performance' });
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, stencil: false, powerPreference: 'high-performance' });
 renderer.setPixelRatio(Math.min(devicePixelRatio, mobile ? 1.25 : 1.75));
 renderer.setSize(innerWidth, innerHeight);
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.05;
 renderer.shadowMap.enabled = !mobile;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
@@ -37,7 +32,7 @@ const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(mobile ? 60 : 44, innerWidth / innerHeight, .1, 2200);
 camera.position.set(-5, 8, 9);
 
-scene.add(new THREE.HemisphereLight('#6a5690', '#1c0d10', 1.0));
+const hemi = new THREE.HemisphereLight('#6a5690', '#1c0d10', 1.0); scene.add(hemi);
 const sunL = new THREE.DirectionalLight('#ff9a5c', 2.6);
 sunL.castShadow = true; sunL.shadow.mapSize.set(2048, 2048);
 Object.assign(sunL.shadow.camera, { left: -26, right: 26, top: 26, bottom: -26, near: 1, far: 220 });
@@ -45,14 +40,17 @@ sunL.shadow.bias = -.0005; sunL.shadow.normalBias = .03;
 scene.add(sunL, sunL.target);
 const fill = new THREE.DirectionalLight('#8a96ff', .35); scene.add(fill, fill.target);
 
-const composer = new EffectComposer(renderer);
-composer.addPass(new RenderPass(scene, camera));
-const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth / 2, innerHeight / 2), .8, .55, .8);
-composer.addPass(bloom);
-composer.addPass(new OutputPass());
-
 const world = buildWorld(scene, { mobile });
 const A = world.anchors;
+
+// film pipeline: HDRI sky light, depth of field, god rays, bloom, ACES, grade, grain, lens fringing
+const pipe = createPipeline(renderer, scene, camera, world.sun, { mobile });
+const bloom = pipe.bloom;
+loadHDRI(renderer, scene, 'assets/env/sky_on_fire_1k.hdr', .55);
+const atmo = createAtmosphere(scene, { mobile });
+// light shafts falling through the bamboo canopy and into the dojo
+atmo.addShafts(V(ST.train.x - 4, 15, ST.train.z - 8), V(.18, -1, .55), mobile ? 4 : 8, 14, 22, 1.1);
+atmo.addShafts(V(A.dojo.samurai.x, 6.5, A.dojo.samurai.z - 4), V(.15, -1, .5), mobile ? 3 : 5, 7, 9, .55);
 
 /* ---------- loader ---------- */
 const loader = $('#loader'), num = $('#loaderNum'), enso = $('.enso path');
@@ -189,7 +187,8 @@ const CAM = {
     const D = ST.duel, narrow = camera.aspect < 1;
     const mid = duelState.mid || V(D.x, 0, D.z), bi = duelState.bi || 0, end = range(k, .8, .95);
     const ang = lerp(-.34, .26, range(k, .08, .8));
-    const dist = (narrow ? 8.6 : 6.4) - range(k, .22, .36) * 1.3 - bi * 1.9 + end * 3;
+    // wide establishing shot for the bows, then in close for the fight
+    const dist = (narrow ? 8.6 : 6.4) + (1 - range(k, .16, .3)) * (narrow ? 5 : 3) - range(k, .22, .36) * 1.3 - bi * 1.9 + end * 3;
     return {
       p: V(mid.x + Math.sin(ang) * dist, 1.35 - bi * .2 + end * 1.4 + (1 - range(k, .2, .3)) * .4, mid.z + Math.cos(ang) * dist),
       l: V(mid.x, 1.2 + end * .9, mid.z - 1)
@@ -198,7 +197,12 @@ const CAM = {
 };
 const camPos = camera.position.clone(), camLook = V(0, 7, -20), tmpP = V(0, 0, 0), tmpL = V(0, 0, 0);
 const prog = Object.fromEntries(IDS.map(i => [i, 0]));
-let focus = 'hero', shake = 0;
+let focus = 'hero', shake = 0, lookA = 'hero', lookB = 'hero', lookT = 0, introK = 1, lightning = 0;
+// opening crane: high over the castle town, sweeping down onto the samurai on her cliff
+const INTRO = [
+  { p: V(-46, 52, 84), l: V(10, 6, -90) },
+  { p: V(-18, 20, 30), l: V(2, 7, -40) }
+];
 const mouse = { x: 0, y: 0 };
 addEventListener('pointermove', e => { mouse.x = e.clientX / innerWidth - .5; mouse.y = e.clientY / innerHeight - .5; });
 
@@ -208,19 +212,25 @@ function frameCamera(dt) {
   let target = null;
   for (let i = 0; i < ranges.length; i++) {
     const r = ranges[i], n = ranges[i + 1];
-    if (y <= r.end || !n) { target = CAM[r.id](prog[r.id]); focus = r.id; break; }
+    if (y <= r.end || !n) { target = CAM[r.id](prog[r.id]); focus = lookA = lookB = r.id; lookT = 0; break; }
     if (y < n.start) {
       const t = smooth(range(y, r.end, n.start));
       const a = CAM[r.id](1), b = CAM[n.id](0);
       target = { p: a.p.lerp(b.p, t), l: a.l.lerp(b.l, t) };
       target.p.y += Math.sin(Math.PI * t) * 16;               // fly over the land between stations
-      focus = t < .5 ? r.id : n.id;
+      focus = t < .5 ? r.id : n.id; lookA = r.id; lookB = n.id; lookT = t;
       break;
     }
   }
   if (!target) target = CAM.hero(0);
+  if (introK < 1) {
+    const u = easeInOut(introK), a = INTRO[0], b = INTRO[1];
+    const p1 = a.p.clone().lerp(b.p, range(u, 0, .65)), l1 = a.l.clone().lerp(b.l, range(u, 0, .65));
+    const w = smooth(range(u, .55, 1));
+    target = { p: p1.lerp(target.p, w), l: l1.lerp(target.l, w) };
+  }
   if (window.__camOverride) { const o = window.__camOverride; target = { p: V(...o.p), l: V(...o.l) }; }
-  const k = 1 - Math.exp(-dt * (focus === 'work' || focus === 'journey' ? 9 : 5));
+  const k = introK < 1 ? 1 : 1 - Math.exp(-dt * (focus === 'work' || focus === 'journey' ? 9 : 5));
   const tt = performance.now() / 1000;                       // subtle handheld drift
   tmpP.copy(target.p).add(V(mouse.x * .6 + Math.sin(tt * .31) * .07, -mouse.y * .3 + Math.sin(tt * .23) * .05, Math.sin(tt * .17) * .05));
   camPos.lerp(tmpP, k); camLook.lerp(target.l, k);
@@ -261,7 +271,7 @@ const stations = {
     if (drawState === 1) {
       const a = heroSam.current, d = a ? a.getClip().duration : 1, fr = a ? a.time / d : 1;
       if (!heroSam.armed && fr > cfg(heroSam, 'drawAt', .42)) { heroSam.setArmed(true); sfx.unsheathe(.42); heroSam.glint(); }
-      if (!heroSam.has('draw') || fr >= .97) { drawState = 2; heroSam.setArmed(true); heroSam.play('idle', { fade: .5 }); }
+      if (!heroSam.has('draw') || fr >= .97) { drawState = 2; heroSam.setArmed(true); heroSam.play(heroSam.has('pose') ? 'pose' : 'idle', { fade: .6 }); }
     } else if (drawState === 2 && (glintIn -= dt) <= 0) { glintIn = 6 + Math.random() * 5; heroSam.glint(); }
   },
 
@@ -305,7 +315,10 @@ const stations = {
     } else {
       if (roofNin._air && Math.abs(v) > 1) sfx.land(.2);
       roofNin._air = false;
-      if (Math.abs(v) > .6) {
+      const into = fwd ? r.into : r.outOf;
+      if (roofNin.has('roll') && Math.abs(v) > 1.5 && into != null && into < 3.4) {
+        roofNin.scrub('roll', range(into, 0, 3.4) * .85, .08);
+      } else if (Math.abs(v) > .6) {
         roofNin.play('run', { speed: clamp(Math.abs(v) / 7, .45, 1.9), fade: .2 });
         roofNin._d = (roofNin._d || 0) + Math.abs(wx - p.x);
         if (roofNin._d > 1.7) { roofNin._d = 0; sfx.step(.08); }
@@ -369,19 +382,20 @@ let ftPrev = 0;
 
 function duelUpdate(dt) {
   dCur = lerp(dCur, prog.duel, 1 - Math.exp(-dt * 10));
-  const k = dCur, X = ST.duel.x, Z = ST.duel.z, R = mobile ? 4.2 : 7.5;
+  const k = dCur, X = ST.duel.x, Z = ST.duel.z, R = mobile ? 3.2 : 4.4;
   // the real fight: Mixamo's synced "Sword Fight One" (A = samurai wins, B = ninja loses).
   // Before it, both close the distance at a run.
   const real = duelSam.has('duel') && duelNin.has('duel');
   const GAP = cfg(duelSam, 'duelGap', .8);
-  const app = easeInOut(range(k, .1, .26));
+  const app = easeInOut(range(k, .17, .27));
   const sx = lerp(X - R, X - GAP, app), nx = lerp(X + R, X + GAP, app);
   const vS = (sx - duelSam.root.position.x) / Math.max(dt, 1e-3);
   duelSam.root.position.set(sx, 0, Z); duelNin.root.position.set(nx, 0, Z);
   const ft = warp(range(k, .27, .86));
-  duelSam.setArmed(true); duelNin.setArmed(k > .06);
+  duelSam.setArmed(true); duelNin.setArmed(k > .17);
 
-  if (k < .1) { duelSam.play('idle'); duelNin.play('crouch'); }
+  if (k < .06) { duelSam.play('idle'); duelNin.play('crouch'); }
+  else if (k < .17 && duelSam.has('bow')) { const b = range(k, .06, .16); duelSam.scrub('bow', b, .3); duelNin.scrub('bow', b, .3); }
   else if (k < .27) {
     const sp = clamp(Math.abs(vS) / 5, .3, 1.6);
     duelSam.play('run', { speed: sp, fade: .25 }); duelNin.play('run', { speed: sp, fade: .25 });
@@ -393,7 +407,7 @@ function duelUpdate(dt) {
   if (k > .27) duelBeats.forEach(([b, a]) => { bi = Math.max(bi, Math.exp(-Math.pow((ft - b) / .03, 2)) * (a > 3 ? 1 : .6)); });
   duelState.ft = ft; duelState.bi = bi;
   duelState.mid = (duelState.mid || V()).set((sx + nx) / 2, 0, Z);
-  bloom.strength = .8 + bi * .7;
+  bloom.intensity = 1.1 + bi * .9;
 
   // DOM fx around the finishing cut
   const CUT = cfg(duelSam, 'cutAt', .706);
@@ -412,7 +426,7 @@ function duelUpdate(dt) {
   // one-shot beats, fired only when scrolling forward past them
   const ev = (th, fn) => { if (dPrev < th && k >= th) fn(); };
   ev(.04, () => sfx.hyoshigi());
-  ev(.06, () => { sfx.unsheathe(.35); duelSam.glint(); });
+  ev(.17, () => { sfx.unsheathe(.35); duelSam.glint(); });
   ev(.14, () => sfx.drum(.6));
   ev(.22, () => sfx.drum(.75));
   const fev = (th, fn) => { if (k > .27 && ftPrev < th && ft >= th) fn(); };
@@ -422,7 +436,7 @@ function duelUpdate(dt) {
     sfx.slash(.5); sfx.drum(.5); duelSam.glint();
     burst(duelSam.bladeTip(), 55, 6); shake = Math.max(shake, .3);
   }));
-  fev(CUT, () => { sfx.clash(); shake = .7; burst(duelSam.bladeTip(), 140, 9); duelSam.glint(); });
+  fev(CUT, () => { sfx.clash(); sfx.drum(1); shake = .7; lightning = 1; burst(duelSam.bladeTip(), 140, 9); duelSam.glint(); });
   fev(cfg(duelSam, 'fallAt', .775), () => sfx.land(.5));
   ev(.9, () => { sfx.resolve(); duelSam.glint(); });
   dPrev = k; ftPrev = ft;
@@ -447,20 +461,79 @@ function frame(time, deltaMs) {
   if (!mobile) track.style.transform = `translate3d(${(-trackDist() * range(prog.work, .04, .96)).toFixed(1)}px,0,0)`;
   updateSparks(dt); updateStars(dt);
   world.update(time, dt, camera, focus);
-  composer.render();
+  grade(dt, time);
+  pipe.render(dt);
 
   if (focus !== lastFocus) {
+    if (lastFocus && introK >= 1) chapter(focus);
     lastFocus = focus;
     links.forEach(l => l.classList.toggle('active', l.getAttribute('href') === '#' + focus));
     window.Sound && Sound.setMood(MOOD[focus]);
   }
 }
 
+/* ---------- look + weather + focus per scene ---------- */
+const WEATHER = {
+  hero:    { mist: .45, embers: .75, flies: 0,  rain: 0, shafts: 0 },
+  about:   { mist: .2,  embers: .15, flies: .8, rain: 0, shafts: .9 },
+  arsenal: { mist: .55, embers: 0,   flies: .7, rain: 0, shafts: 1 },
+  work:    { mist: .3,  embers: .5,  flies: 0,  rain: 0, shafts: 0 },
+  journey: { mist: .5,  embers: .25, flies: .7, rain: 0, shafts: 0 },
+  duel:    { mist: .4,  embers: .9,  flies: 0,  rain: 0, shafts: 0 }
+};
+const FOCUS = {          // what the lens holds sharp, and how shallow the focus is
+  hero: () => [heroSam.root.position, 1.4, 7, 2.2],
+  about: () => (Math.abs(dojoNin.root.position.x - A.dojo.samurai.x) < 3.5 ? [dojoNin.root.position, 1.1, 3, 3.4] : [dojoSam.root.position, .9, 2.4, 3.4]),
+  arsenal: () => [trainNin.root.position, 1, 6, 2.6],
+  work: () => [roofNin.root.position, 1.2, 6, 2.4],
+  journey: () => [roadSam.root.position, 1.3, 4, 3],
+  duel: () => [duelState.mid || duelSam.root.position, 1.2, 4.5, 2.8]
+};
+const fp = V(0, 0, 0), white = new THREE.Color('#ffffff');
+function grade(dt, t) {
+  const L = blendLook(lookA, lookB, lookT);
+  const u = world.skyMat.uniforms;
+  u.top.value.copy(L.top); u.mid.value.copy(L.mid); u.horizon.value.copy(L.horizon).lerp(white, lightning * .8); u.glowC.value.copy(L.glow);
+  scene.fog.color.copy(L.fog).lerp(white, lightning * .5); scene.fog.density = L.fogD;
+  sunL.color.copy(L.sun); sunL.intensity = L.sunI; hemi.intensity = L.hemi + lightning * 5;
+  scene.environmentIntensity = L.env;
+  pipe.bc.contrast = L.con; pipe.bc.brightness = (L.exp - 1) * .4 + lightning * .25; pipe.hs.saturation = L.sat;
+  pipe.godRays.blendMode.opacity.value = Math.min(1, L.rays);
+  lightning = Math.max(0, lightning - dt * 2.2);
+  // weather
+  const wa = WEATHER[lookA], wb = WEATHER[lookB], W = {};
+  for (const key in wa) W[key] = lerp(wa[key], wb[key], lookT);
+  if (focus === 'duel') W.rain = range(prog.duel, .22, .36) * (1 - range(prog.duel, .9, 1) * .5);
+  atmo.update(t, dt, camera, L, W);
+  // focus pull
+  const [p, h, rng, bokeh] = FOCUS[focus]();
+  fp.lerp(V(p.x, p.y + h, p.z), 1 - Math.exp(-dt * 4));
+  pipe.focus(fp, rng, introK < 1 ? 1.2 : bokeh);
+}
+
+// chapter title card while flying between scenes
+const CHAPTERS = {
+  about: ['道', '第一章 · Chapter I', 'The Way'], arsenal: ['武', '第二章 · Chapter II', 'The Arsenal'],
+  work: ['戦', '第三章 · Chapter III', 'Campaigns'], journey: ['旅', '第四章 · Chapter IV', 'The Road'], duel: ['決', '終章 · Finale', 'The Duel']
+};
+const chapterEl = $('.chapter');
+function chapter(id) {
+  const c = CHAPTERS[id]; if (!c || reduce) return;
+  chapterEl.querySelector('.ch-kanji').textContent = c[0];
+  chapterEl.querySelector('.ch-num').textContent = c[1];
+  chapterEl.querySelector('.ch-title').textContent = c[2];
+  sfx.drum(.35);
+  gsap.killTweensOf(chapterEl);
+  gsap.timeline()
+    .fromTo(chapterEl, { autoAlpha: 0, scale: 1.08, filter: 'blur(10px)' }, { autoAlpha: 1, scale: 1, filter: 'blur(0px)', duration: .7, ease: 'power3.out' })
+    .fromTo(chapterEl.querySelector('.ch-rule'), { scaleX: 0 }, { scaleX: 1, duration: .8, ease: 'expo.out' }, '<.1')
+    .to(chapterEl, { autoAlpha: 0, scale: .97, filter: 'blur(6px)', duration: .8, ease: 'power2.in' }, '+=1.1');
+}
+
 /* ---------- resize ---------- */
 function resize() {
   renderer.setSize(innerWidth, innerHeight);
-  composer.setSize(innerWidth, innerHeight);
-  bloom.resolution.set(innerWidth / 2, innerHeight / 2);
+  pipe.setSize(innerWidth, innerHeight);
   camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
   measure(); ScrollTrigger.refresh();
 }
@@ -537,11 +610,19 @@ ScrollTrigger.refresh();
 gsap.ticker.add(frame);
 
 function intro() {
+  const o = { k: 0 };
+  lenis && lenis.stop();
+  introK = reduce ? 1 : 0;
+  gsap.set(['.hero-title .line > span'], { yPercent: 115 });
+  gsap.set(['.eyebrow', '.hero-role', '.hero .hero-cta', '.scroll-cue', '.nav'], { autoAlpha: 0 });
   gsap.timeline()
-    .from('.hero-title .line > span', { yPercent: 115, duration: 1.2, ease: 'expo.out', stagger: .12 })
-    .from(['.eyebrow', '.hero-role', '.hero .hero-cta', '.scroll-cue'], { y: 26, autoAlpha: 0, duration: .9, stagger: .08, ease: 'power3.out' }, '-=.8')
-    .from('.nav', { autoAlpha: 0, duration: .8 }, .4)
-    .add(() => { drawState = 1; heroSam.play(heroSam.has('draw') ? 'draw' : 'idle', { loop: false, fade: .1 }); }, .9);
+    .to(o, { k: 1, duration: reduce ? 0 : 6.2, ease: 'none', onUpdate: () => { introK = o.k; } })
+    .add(() => sfx.drum(.5), 3.6)
+    .to('.hero-title .line > span', { yPercent: 0, duration: 1.4, ease: 'expo.out', stagger: .14 }, 3.4)
+    .to(['.eyebrow', '.hero-role', '.hero .hero-cta', '.scroll-cue'], { y: 0, autoAlpha: 1, duration: .9, stagger: .08, ease: 'power3.out' }, 4.4)
+    .to('.nav', { autoAlpha: 1, duration: .8 }, 5)
+    .add(() => { drawState = 1; heroSam.play(heroSam.has('draw') ? 'draw' : 'idle', { loop: false, fade: .1 }); }, 4.8)
+    .add(() => { introK = 1; lenis && lenis.start(); });
 }
 function enter(withSound) {
   if (withSound) Sound.enable(true);
@@ -550,7 +631,7 @@ function enter(withSound) {
   gsap.timeline({ onComplete: () => loader.remove() })
     .to('.loader-core', { autoAlpha: 0, scale: .96, duration: .35 })
     .to('.loader-slash', { scaleX: 1, duration: .32, ease: 'expo.in' })
-    .add(() => { document.body.classList.remove('loading'); lenis && lenis.start(); measure(); ScrollTrigger.refresh(); intro(); })
+    .add(() => { document.body.classList.remove('loading'); measure(); ScrollTrigger.refresh(); intro(); })
     .to('.loader-half.top', { yPercent: -100, duration: 1.2, ease: 'expo.inOut' }, '+=.05')
     .to('.loader-half.bottom', { yPercent: 100, duration: 1.2, ease: 'expo.inOut' }, '<')
     .to('.loader-slash', { autoAlpha: 0, duration: .25 }, '<');
@@ -562,4 +643,4 @@ gsap.to('.loader-line', { autoAlpha: 0, duration: .3 });
 gsap.to('.loader-enter', { autoAlpha: 1, y: 0, duration: .6, delay: .2 });
 $('.enter-sound').addEventListener('click', () => enter(true), { once: true });
 $('.enter-quiet').addEventListener('click', () => enter(false), { once: true });
-window.__app = { scene, camera, cast, all, prog, ranges: () => ranges };
+window.__app = { scene, camera, cast, all, prog, pipe, world, ranges: () => ranges };

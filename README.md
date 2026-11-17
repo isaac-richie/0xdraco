@@ -25,14 +25,25 @@ Then open http://localhost:5173.
 ## Project layout
 - `index.html`, `css/`: page structure and styles. The text sits on glass panels over the 3D world.
 - `js/three/world.js`: the world itself, built in code: sky, castle, dojo, bamboo grove, rooftops, torii road and duel field.
-- `js/three/characters.js`: loads the characters, gives them the rim-lit ink look, and attaches the katana, scabbard and headband to the skeleton.
+- `js/three/characters.js`: loads the characters, gives them realistic materials with a subtle rim light, and attaches the katana, scabbard and headband to the skeleton.
+- `js/three/cinema.js`: the film look: post-processing, HDRI lighting, per-scene grades and atmosphere.
 - `js/three/app.js`: the scroll-driven camera, each section's choreography, the duel timing, and the UI.
 - `js/audio.js`: the procedural music and sound effects.
-- `assets/models/*.glb`: the characters with their motion clips (about 8 MB). `assets/manifest.json` sets which clip plays where and the duel beat timings.
+- `assets/models/*.glb`: the characters with their motion clips (about 9 MB). `assets/manifest.json` sets which clip plays where and the duel beat timings.
+- `assets/env/`: the Poly Haven HDRI, textures and props (about 5 MB, loaded in the background).
 - `index-2d.html`: the earlier 2D SVG version.
 
+## The film look
+- **Lighting:** the "The Sky Is On Fire" sunset HDRI provides image-based light for every character and surface.
+- **Post-processing:** depth of field with automatic focus pulls, bloom, ACES tone mapping, and a custom grading shader (contrast, saturation, vignette, film grain, lens fringing, screen-space sun rays).
+- **Per-scene grades:** the colour blends as the camera flies between scenes, from sunset to dojo candlelight, golden bamboo, blue-hour rooftops, lantern dusk and a blood-red duel.
+- **Atmosphere:** drifting mist, embers, fireflies, light shafts, and rain with a lightning strike on the final cut.
+- **Direction:** an opening crane shot, chapter title cards between scenes, bows before the duel, and a ninja roll when he lands on the rooftops.
+
 ## Credits
-Characters and motion capture come from [Mixamo](https://www.mixamo.com) (Kachujin G Rosales, Ninja). Everything else is original and written in code.
+- Characters and motion capture: [Mixamo](https://www.mixamo.com) (Kachujin G Rosales, Ninja).
+- HDRI, textures and props (CC0): [Poly Haven](https://polyhaven.com): The Sky Is On Fire, clay roof tiles, painted planks, brown planks, castle wall slates, clay plaster, aerial grass rock, antique katana, katana stand and mossy rock set.
+- Everything else is original and written in code.
 
 ## To do
 - Replace the placeholder email (`hello@yourdomain.com`) and the X link in `index.html`.
