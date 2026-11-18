@@ -703,8 +703,8 @@ function grade(dt, t) {
 
 // chapter title card while flying between scenes
 const CHAPTERS = {
-  about: ['道', '第一章 · Chapter I', 'The Way'], arsenal: ['武', '第二章 · Chapter II', 'The Arsenal'],
-  work: ['戦', '第三章 · Chapter III', 'Campaigns'], journey: ['旅', '第四章 · Chapter IV', 'The Road'], duel: ['決', '終章 · Finale', 'The Duel']
+  about: ['道', '第一章 · Chapter I', 'About'], arsenal: ['武', '第二章 · Chapter II', 'Skills'],
+  work: ['戦', '第三章 · Chapter III', 'Projects'], journey: ['旅', '第四章 · Chapter IV', 'Timeline'], duel: ['決', '終章 · Finale', 'Contact']
 };
 const chapterEl = $('.chapter');
 function chapter(id) {
