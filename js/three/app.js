@@ -394,6 +394,7 @@ function frameCamera(dt) {
 }
 
 /* ---------- station choreography ---------- */
+const ROAD_PACE = 1.35;            // m/s: a calm walk (the walk clip's own stride covers 1.28 m/s)
 // they sprint at the run clip's natural pace (feet locked to the wall) and carry extra speed through the leap
 const W = { ...A.hero.wall, from: -50, to: 50 }, NSPEED = 4.9, LEAP = [W.gap[0] - 2, W.gap[1] + 2], LEAPX = 1.7;
 const pathLen = (W.to - W.from) + (LEAP[1] - LEAP[0]) * (1 / LEAPX - 1);       // in run-time metres
@@ -505,9 +506,17 @@ const stations = {
   },
 
   journey(dt) {
-    const k = prog.journey, R = A.road;
-    const z = lerp(R.z0, R.z1, k), p = roadSam.root.position;
-    const v = locomote(roadSam, z - p.z, dt, { slow: 'walk', fast: 'run', fastAt: 2.3 });
+    const k = prog.journey, R = A.road, p = roadSam.root.position;
+    // the scroll sets where she is headed; she walks there at her own unhurried pace, so a flick of the
+    // mouse wheel can't turn the pilgrimage into a sprint. The camera follows her, not the scroll.
+    const goal = lerp(R.z0, R.z1, k);
+    let z = goal;
+    if (focus === 'journey') {
+      const want = clamp((goal - p.z) * 1.1, -ROAD_PACE, ROAD_PACE);
+      roadSam._cv = lerp(roadSam._cv || 0, want, 1 - Math.exp(-dt * 2.5));     // ease into and out of each stride
+      z = p.z + roadSam._cv * dt;
+    } else roadSam._cv = 0;                                                      // off camera: just be in place
+    const v = locomote(roadSam, z - p.z, dt, { slow: 'walk', fast: 'walk' });
     if (v) {
       roadSam.face(v < 0 ? Math.PI : 0, 6);
       roadSam._d = (roadSam._d || 0) + Math.abs(z - p.z);
